@@ -11,8 +11,17 @@ patches:
   - path: gateway-deployment-patch.yaml
   - path: orchestrator-deployment-patch.yaml
   - path: worker-deployment-patch.yaml
-  # NOTE: db-migrate-job-patch.yaml is NOT listed here — it's a standalone
-  # manifest applied separately by the deploy workflow's migration step.
+  # Delete db-migrate-job from kustomize build — it's a one-shot job
+  # applied separately by the deploy workflow's migration step.
+  - target:
+      kind: Job
+      name: eve-db-migrate
+    patch: |
+      $patch: delete
+      apiVersion: batch/v1
+      kind: Job
+      metadata:
+        name: eve-db-migrate
   - path: remove-postgres-statefulset.yaml
   - path: remove-postgres-service.yaml
   - path: remove-postgres-secret.yaml
