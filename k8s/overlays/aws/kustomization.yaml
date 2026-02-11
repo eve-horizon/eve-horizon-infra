@@ -11,7 +11,8 @@ patches:
   - path: gateway-deployment-patch.yaml
   - path: orchestrator-deployment-patch.yaml
   - path: worker-deployment-patch.yaml
-  - path: db-migrate-job-patch.yaml
+  # NOTE: db-migrate-job-patch.yaml is NOT listed here — it's a standalone
+  # manifest applied separately by the deploy workflow's migration step.
   - path: remove-postgres-statefulset.yaml
   - path: remove-postgres-service.yaml
   - path: remove-postgres-secret.yaml
