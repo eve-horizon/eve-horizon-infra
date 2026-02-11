@@ -4,14 +4,25 @@ metadata:
   name: eve-db-migrate
   namespace: eve
 spec:
+  ttlSecondsAfterFinished: 300
   template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: eve-db-migrate
     spec:
+      restartPolicy: OnFailure
       imagePullSecrets:
         - name: eve-registry
       containers:
         - name: migrate
-          image: ghcr.io/eve-horizon/worker:latest
+          image: ghcr.io/eve-horizon/api:latest
           imagePullPolicy: IfNotPresent
           env:
             - name: DATABASE_URL
-              value: postgres://eve:REPLACE_ME@db.example.com:5432/eve
+              valueFrom:
+                secretKeyRef:
+                  name: eve-app
+                  key: DATABASE_URL
+          command:
+            - node
+            - /app/packages/db/dist/migrate.js
