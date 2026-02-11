@@ -1,0 +1,178 @@
+# =============================================================================
+# Eve Horizon Platform Configuration
+# =============================================================================
+#
+# This is the single configuration file that drives an Eve deployment.
+# Copy this file, fill in your values, and point your deploy tooling here.
+#
+# Fields marked [REQUIRED] must be set before deploying.
+# Fields marked [OPTIONAL] have sensible defaults.
+#
+# Tip: Keep this file in version control (it contains no secrets).
+#      Secrets belong in secrets.env (see config/secrets.env.example).
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Platform Identity
+# -----------------------------------------------------------------------------
+
+platform:
+  # Pinned Eve platform version. All service images are pulled at this tag.
+  # Bump this to upgrade the entire platform in lockstep.
+  version: "0.1.28"
+
+  # Container image registry. All Eve images live under this namespace.
+  # Default points to the public Eve Horizon registry on GitHub Packages.
+  registry: "ghcr.io/eve-horizon"      # [OPTIONAL] Override for private mirrors
+
+# -----------------------------------------------------------------------------
+# Environment
+# -----------------------------------------------------------------------------
+
+# Human-readable environment name, used for resource tagging and log context.
+# Common values: staging, production, dev
+environment: "staging"
+
+# Unique prefix for cloud resource names (prevents collisions when running
+# multiple Eve instances in the same cloud account).
+# Example: "eve-staging", "acme-eve-prod"
+name_prefix: "eve-staging"              # [REQUIRED]
+
+# -----------------------------------------------------------------------------
+# Cloud & Region
+# -----------------------------------------------------------------------------
+
+# Cloud provider. Determines which Terraform root module and Kustomize
+# overlay are used during deployment.
+#   aws  - Amazon Web Services (EC2 + RDS + Route53)
+#   gcp  - Google Cloud Platform (planned)
+cloud: aws                              # [REQUIRED] aws | gcp
+
+# Cloud region where all resources are provisioned.
+region: eu-west-1                       # [REQUIRED] e.g. us-west-2, eu-west-1
+
+# -----------------------------------------------------------------------------
+# Domain Configuration
+# -----------------------------------------------------------------------------
+
+# Base domain for the Eve Horizon instance. DNS records are created
+# automatically via the cloud provider's DNS service (Route53, Cloud DNS).
+domain: eve.example.com                 # [REQUIRED] Your registered domain
+
+# API endpoint. The Eve API and gateway ingress are served from this host.
+# Convention: api.<domain>
+api_host: api.eve.example.com           # [REQUIRED] Must resolve to the server
+
+# Wildcard domain for apps deployed by Eve (build & deploy pipeline).
+# Eve creates <app-slug>.<app_domain> subdomains for each deployed app.
+app_domain: apps.example.com            # [REQUIRED] Wildcard DNS recommended
+
+# Route53 hosted zone ID (AWS-specific). Required when cloud: aws.
+# Find it in AWS Console > Route53 > Hosted Zones.
+route53_zone_id: ""                     # [REQUIRED for AWS] e.g. Z0123456789ABC
+
+# -----------------------------------------------------------------------------
+# TLS
+# -----------------------------------------------------------------------------
+
+tls:
+  # TLS certificate provider. cert-manager is installed automatically on k3s.
+  provider: cert-manager                # [OPTIONAL] cert-manager | none
+
+  # ClusterIssuer name. "letsencrypt-prod" uses the ACME production endpoint.
+  # Use "letsencrypt-staging" for testing to avoid rate limits.
+  issuer: letsencrypt-prod              # [OPTIONAL] letsencrypt-prod | letsencrypt-staging
+
+  # Email address for Let's Encrypt registration and expiry notifications.
+  email: ops@example.com                # [REQUIRED when provider=cert-manager]
+
+# -----------------------------------------------------------------------------
+# Database
+# -----------------------------------------------------------------------------
+
+database:
+  # Database provider.
+  #   rds       - AWS RDS managed PostgreSQL (provisioned by Terraform)
+  #   cloud-sql - GCP Cloud SQL (planned)
+  #   in-cluster - Dev-only PostgreSQL StatefulSet inside k3s
+  #   external  - Bring your own PostgreSQL (set DATABASE_URL in secrets.env)
+  provider: rds                         # [REQUIRED] rds | cloud-sql | in-cluster | external
+
+  # Cloud-specific instance class. Ignored when provider is "external".
+  #   db.t3.micro  : 1 vCPU, 1 GB RAM  - free tier, dev/staging
+  #   db.t3.small  : 1 vCPU, 2 GB RAM  - light staging
+  #   db.t3.medium : 2 vCPU, 4 GB RAM  - production
+  instance_class: db.t3.micro           # [OPTIONAL]
+
+  # Database name and default admin user.
+  name: eve                             # [OPTIONAL] PostgreSQL database name
+  username: eve                         # [OPTIONAL] PostgreSQL admin username
+
+  # Enable deletion protection on the managed database instance.
+  # Always true in production to prevent accidental data loss.
+  deletion_protection: false            # [OPTIONAL] true for production
+
+# -----------------------------------------------------------------------------
+# Compute
+# -----------------------------------------------------------------------------
+
+compute:
+  # EC2 / GCE instance type for the k3s server node.
+  #   t3.large    : 2 vCPU,  8 GB RAM  - minimum (small teams)
+  #   m6i.xlarge  : 4 vCPU, 16 GB RAM  - recommended
+  #   m6i.2xlarge : 8 vCPU, 32 GB RAM  - larger workloads
+  type: m6i.xlarge                      # [REQUIRED]
+
+  # Root disk size in GB. Must accommodate OS, k3s images, buildkit cache,
+  # and agent workspace volumes.
+  disk_size_gb: 50                      # [OPTIONAL] Minimum 30
+
+# -----------------------------------------------------------------------------
+# Network & Access Control
+# -----------------------------------------------------------------------------
+
+network:
+  # VPC CIDR block (AWS). Ignored for non-AWS providers.
+  vpc_cidr: "10.0.0.0/16"              # [OPTIONAL]
+
+  # CIDR blocks allowed to SSH to the server and access the k3s API.
+  # Use /32 for a single IP.  Find yours: curl -s https://checkip.amazonaws.com
+  allowed_ssh_cidrs:                    # [REQUIRED]
+    - "0.0.0.0/0"                       # CHANGE THIS - restrict to your IP
+
+# SSH public key for server access.
+# Generate: ssh-keygen -t ed25519 -f ~/.ssh/eve-server
+ssh_public_key: ""                      # [REQUIRED] Contents of your .pub file
+
+# -----------------------------------------------------------------------------
+# Observability (optional)
+# -----------------------------------------------------------------------------
+
+observability:
+  # Enable OpenTelemetry sidecar collection for all Eve services.
+  otel_enabled: false                   # [OPTIONAL]
+
+  # OTLP exporter endpoint (gRPC or HTTP).
+  # When otel_enabled is true, all services send traces and metrics here.
+  otel_endpoint: "http://otel-collector.eve.svc.cluster.local:4318"  # [OPTIONAL]
+
+# -----------------------------------------------------------------------------
+# Agent Runtime
+# -----------------------------------------------------------------------------
+
+agent_runtime:
+  # Number of agent-runtime StatefulSet replicas.
+  # Each replica can handle `capacity` concurrent agent sessions.
+  replicas: 3                           # [OPTIONAL] Default 3
+
+  # Max concurrent agent sessions per replica.
+  capacity: 8                           # [OPTIONAL] Default 8
+
+# -----------------------------------------------------------------------------
+# Overlay Selection
+# -----------------------------------------------------------------------------
+
+# Kustomize overlay directory. Defaults to the cloud provider name.
+# Maps to k8s/overlays/<overlay>/ for cloud-specific patches (ingress
+# annotations, image registry, managed database wiring, etc.).
+overlay: aws                            # [OPTIONAL] Defaults to value of `cloud`
