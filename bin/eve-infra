@@ -69,9 +69,15 @@ cfg_get() {
   echo "$raw"
 }
 
-# Resolve KUBECONFIG: env var > ~/.kube/eve-<name_prefix>.yaml > default
+# Resolve KUBECONFIG: env var > config/kubeconfig.yaml > ~/.kube/eve-<prefix>.yaml > default
 resolve_kubeconfig() {
   if [[ -n "${KUBECONFIG:-}" ]]; then
+    return
+  fi
+  # Local repo kubeconfig (gitignored, convenient for agents)
+  local local_kube="$REPO_ROOT/config/kubeconfig.yaml"
+  if [[ -f "$local_kube" ]]; then
+    export KUBECONFIG="$local_kube"
     return
   fi
   local prefix

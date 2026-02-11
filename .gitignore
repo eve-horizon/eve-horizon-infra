@@ -10,6 +10,9 @@ secrets.env
 *.pem
 *.key
 
+# Local kubeconfig (used by agents and bin/eve-infra)
+config/kubeconfig.yaml
+
 # OS
 .DS_Store
 
