@@ -40,4 +40,10 @@ Place your kubeconfig at `config/kubeconfig.yaml` (gitignored). The CLI and kube
 
 ## Skills
 
-Agent skills are in `.claude/skills/`. Load `eve-infra-ops` for operational guidance.
+Install agent skills:
+
+```bash
+eve skills install
+```
+
+This reads `skills.txt` and installs from `skills/` into `.agent/skills/` + `.claude/skills/`. The `eve-infra-ops` skill provides operational guidance for debugging and managing this deployment.

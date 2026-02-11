@@ -34,9 +34,6 @@ Resolution order: `$KUBECONFIG` env > `config/kubeconfig.yaml` > `~/.kube/eve-<n
 # CLI health check (reads api_host from config/platform.yaml)
 ./bin/eve-infra health
 
-# Or directly
-curl -f https://$(grep api_host config/platform.yaml | awk '{print $2}')/health
-
 # Full status: pods, services, versions
 ./bin/eve-infra status
 ```
@@ -66,7 +63,7 @@ All commands read from `config/platform.yaml` and auto-resolve kubeconfig.
 
 ## Debugging with kubectl
 
-When the CLI isn't enough, use kubectl directly. With kubeconfig at `config/kubeconfig.yaml`, it's auto-detected by the CLI. For raw kubectl, set:
+With kubeconfig at `config/kubeconfig.yaml`, set:
 
 ```bash
 export KUBECONFIG=config/kubeconfig.yaml
@@ -88,9 +85,6 @@ kubectl -n eve logs -f deployment/eve-api --all-containers
 # Last 50 lines from worker
 kubectl -n eve logs deployment/eve-worker --tail=50
 
-# Logs from a specific pod
-kubectl -n eve logs <pod-name>
-
 # Previous container logs (if restarting)
 kubectl -n eve logs <pod-name> --previous
 ```
@@ -111,28 +105,17 @@ kubectl -n eve exec -it deployment/eve-api -- sh
 ### Service & Ingress
 
 ```bash
-# Check services
 kubectl -n eve get svc
-
-# Check ingress rules
 kubectl -n eve get ingress
 kubectl -n eve describe ingress eve-api
-
-# Check traefik (ingress controller)
-kubectl -n kube-system get pods -l app.kubernetes.io/name=traefik
 kubectl -n kube-system logs -l app.kubernetes.io/name=traefik --tail=20
 ```
 
 ### Rollout Management
 
 ```bash
-# Check rollout status
 kubectl -n eve rollout status deployment/eve-api
-
-# Rollback to previous version
 kubectl -n eve rollout undo deployment/eve-api
-
-# Restart without changing version
 kubectl -n eve rollout restart deployment/eve-api
 ```
 
@@ -144,19 +127,15 @@ kubectl -n eve get secret eve-app -o json | jq -r '.data | keys[]'
 
 # Decode a specific value
 kubectl -n eve get secret eve-app -o json | jq -r '.data.DATABASE_URL' | base64 -d
-
-# Check registry secret
-kubectl -n eve get secret eve-registry -o yaml
 ```
 
 ### Persistent Volumes
 
 ```bash
 kubectl -n eve get pvc
-kubectl -n eve describe pvc eve-org-fs-org-default
 ```
 
-**Warning:** Never delete the `eve-org-fs-org-default` PVC while agent-runtime is running — the finalizer will deadlock.
+**Warning:** Never delete `eve-org-fs-org-default` PVC while agent-runtime is running — the finalizer will deadlock.
 
 ## Common Failure Patterns
 
@@ -166,10 +145,7 @@ kubectl -n eve describe pvc eve-org-fs-org-default
 kubectl -n eve describe pod <pod-name> | grep -A5 "Events"
 ```
 
-**Causes:**
-- Image version doesn't exist — check `config/platform.yaml` version matches published tags
-- Registry secret missing or expired — verify `eve-registry` secret
-- Network issue reaching ghcr.io
+**Causes:** Image version doesn't exist (check `config/platform.yaml`), registry secret missing, network issue.
 
 ### CrashLoopBackOff
 
@@ -177,15 +153,11 @@ kubectl -n eve describe pod <pod-name> | grep -A5 "Events"
 kubectl -n eve logs <pod-name> --previous
 ```
 
-**Causes:**
-- DATABASE_URL wrong or unreachable — check secret and RDS security group
-- Missing env vars — compare secret keys to what the service expects
-- Migration not run — `./bin/eve-infra db migrate`
+**Causes:** DATABASE_URL wrong or unreachable, missing env vars, migration not run.
 
 ### Migration Job Stuck
 
 ```bash
-kubectl -n eve get jobs
 kubectl -n eve describe job/eve-db-migrate
 kubectl -n eve logs job/eve-db-migrate
 ```
@@ -203,10 +175,7 @@ kubectl -n eve get ingress -o wide
 kubectl -n eve describe ingress eve-api
 ```
 
-**Causes:**
-- Ingress host doesn't match DNS
-- Service not ready (check pods)
-- TLS certificate not issued (check cert-manager logs)
+**Causes:** Ingress host doesn't match DNS, service not ready, TLS cert not issued.
 
 ## Repo Layout
 
