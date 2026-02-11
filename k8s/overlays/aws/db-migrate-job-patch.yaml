@@ -1,0 +1,17 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: eve-db-migrate
+  namespace: eve
+spec:
+  template:
+    spec:
+      imagePullSecrets:
+        - name: eve-registry
+      containers:
+        - name: migrate
+          image: ghcr.io/eve-horizon/worker:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: DATABASE_URL
+              value: postgres://eve:REPLACE_ME@db.example.com:5432/eve

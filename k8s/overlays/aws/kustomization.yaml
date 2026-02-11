@@ -1,0 +1,17 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+namespace: eve
+patches:
+  - path: api-ingress-patch.yaml
+  - path: api-deployment-patch.yaml
+  - path: agent-runtime-deployment-patch.yaml
+  - path: gateway-ingress-patch.yaml
+  - path: gateway-deployment-patch.yaml
+  - path: orchestrator-deployment-patch.yaml
+  - path: worker-deployment-patch.yaml
+  - path: db-migrate-job-patch.yaml
+  - path: remove-postgres-statefulset.yaml
+  - path: remove-postgres-service.yaml
+  - path: remove-postgres-secret.yaml

@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: eve-worker
+  namespace: eve
+spec:
+  template:
+    spec:
+      imagePullSecrets:
+        - name: eve-registry
+      containers:
+        - name: worker
+          image: ghcr.io/eve-horizon/worker:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: DATABASE_URL
+              value: postgres://eve:REPLACE_ME@db.example.com:5432/eve
+            - name: EVE_RUNNER_IMAGE
+              value: ghcr.io/eve-horizon/worker-full:latest
+            - name: EVE_DEFAULT_DOMAIN
+              value: apps.example.com
+            - name: OTEL_ENABLED
+              value: "true"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://otel-collector.eve.svc.cluster.local:4318

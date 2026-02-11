@@ -1,0 +1,78 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: eve-agent-runtime
+  namespace: eve
+  labels:
+    app.kubernetes.io/name: eve-agent-runtime
+spec:
+  serviceName: eve-agent-runtime
+  replicas: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: eve-agent-runtime
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: eve-agent-runtime
+    spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: agent-runtime
+          securityContext:
+            allowPrivilegeEscalation: false
+          image: eve-horizon/agent-runtime:local
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - secretRef:
+                name: eve-app
+          env:
+            - name: DATABASE_URL
+              value: postgres://eve:eve@postgres.eve.svc.cluster.local:5432/eve
+            - name: EVE_API_URL
+              value: http://eve-api:4701
+            - name: AGENT_RUNTIME_PORT
+              value: "4812"
+            - name: EVE_ORG_ID
+              value: org_default
+            - name: AGENT_RUNTIME_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: AGENT_RUNTIME_CAPACITY
+              value: "8"
+            - name: AGENT_RUNTIME_STATUS
+              value: healthy
+            - name: EVE_ORG_FS_ROOT
+              value: /org
+            - name: EVE_K8S_NAMESPACE
+              value: eve
+            - name: EVE_RUNTIME
+              value: k8s
+            - name: WORKSPACE_ROOT
+              value: /opt/eve/workspaces
+          ports:
+            - name: http
+              containerPort: 4812
+          volumeMounts:
+            - name: org-fs
+              mountPath: /org
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 10
+      volumes:
+        - name: org-fs
+          persistentVolumeClaim:
+            claimName: eve-org-fs-org-default

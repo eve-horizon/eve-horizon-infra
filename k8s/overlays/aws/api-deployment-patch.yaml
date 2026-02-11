@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: eve-api
+  namespace: eve
+spec:
+  template:
+    spec:
+      imagePullSecrets:
+        - name: eve-registry
+      containers:
+        - name: api
+          image: ghcr.io/eve-horizon/api:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: DATABASE_URL
+              value: postgres://eve:REPLACE_ME@db.example.com:5432/eve
+            - name: OTEL_ENABLED
+              value: "true"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://otel-collector.eve.svc.cluster.local:4318

@@ -1,0 +1,27 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: eve-gateway
+  namespace: eve
+  annotations:
+    kubernetes.io/ingress.class: traefik
+spec:
+  rules:
+    - $patch: replace
+      host: api.eve.example.com
+      http:
+        paths:
+          - path: /integrations/slack
+            pathType: Prefix
+            backend:
+              service:
+                name: eve-gateway
+                port:
+                  number: 4820
+          - path: /gateway/providers
+            pathType: Prefix
+            backend:
+              service:
+                name: eve-gateway
+                port:
+                  number: 4820

@@ -1,0 +1,96 @@
+# Eve Horizon AWS Infrastructure - Example Configuration
+# Copy this file to terraform.tfvars and fill in your values.
+#
+# IMPORTANT: terraform.tfvars contains secrets - never commit it!
+# Add terraform.tfvars to your .gitignore.
+
+# -----------------------------------------------------------------------------
+# Project Naming
+# -----------------------------------------------------------------------------
+
+# Human-readable project name for tags
+project_name = "eve-horizon"
+
+# Environment name for tags (e.g., staging, production)
+environment = "staging"
+
+# Prefix for all AWS resource names.
+# Use something short and unique to your deployment (e.g., "eve-staging", "myorg-eve").
+# This prevents naming collisions if you run multiple instances in the same AWS account.
+name_prefix = "REPLACE_WITH_PREFIX"   # e.g., "eve-staging"
+
+# -----------------------------------------------------------------------------
+# AWS Configuration
+# -----------------------------------------------------------------------------
+
+# AWS region (default: us-west-2)
+aws_region = "us-west-2"
+
+# -----------------------------------------------------------------------------
+# Network Configuration
+# -----------------------------------------------------------------------------
+
+# VPC CIDR block (default: 10.0.0.0/16)
+vpc_cidr = "10.0.0.0/16"
+
+# CIDR blocks allowed to SSH to the EC2 instance and access the K8s API.
+# Use /32 for a single IP address.
+# Find your IP: curl -s https://checkip.amazonaws.com
+allowed_ssh_cidrs = [
+  "REPLACE_WITH_YOUR_IP/32",   # e.g., "203.0.113.42/32"
+]
+
+# -----------------------------------------------------------------------------
+# EC2 Configuration
+# -----------------------------------------------------------------------------
+
+# EC2 instance type
+#   m6i.xlarge  : 4 vCPU, 16 GB RAM - recommended for most deployments
+#   t3.large    : 2 vCPU,  8 GB RAM - minimum for small teams
+#   m6i.2xlarge : 8 vCPU, 32 GB RAM - for larger workloads
+instance_type = "m6i.xlarge"
+
+# Root EBS volume size in GB
+root_volume_size = 50
+
+# SSH public key for EC2 access.
+# Generate with: ssh-keygen -t ed25519 -f ~/.ssh/eve-server
+# Then paste the contents of ~/.ssh/eve-server.pub here.
+ssh_public_key = "REPLACE_WITH_SSH_PUBLIC_KEY"   # e.g., "ssh-ed25519 AAAA... you@example.com"
+
+# -----------------------------------------------------------------------------
+# DNS Configuration
+# -----------------------------------------------------------------------------
+
+# Domain name for Eve Horizon.
+# Must be a subdomain (or apex) within the Route53 hosted zone below.
+# Eve will be accessible at https://<domain> and subdomains like api.<domain>.
+domain = "REPLACE_WITH_DOMAIN"   # e.g., "eve.example.com"
+
+# Route53 hosted zone ID that owns the domain above.
+# Find it in the AWS Console under Route53 > Hosted Zones.
+route53_zone_id = "REPLACE_WITH_ZONE_ID"   # e.g., "Z0123456789ABCDEFGHIJ"
+
+# -----------------------------------------------------------------------------
+# Database Configuration
+# -----------------------------------------------------------------------------
+
+# PostgreSQL database name
+db_name = "eve"
+
+# PostgreSQL master username
+db_username = "eve"
+
+# PostgreSQL master password.
+# Generate a strong password: openssl rand -base64 24
+db_password = "REPLACE_WITH_STRONG_PASSWORD"
+
+# RDS instance class
+#   db.t3.micro : Free tier eligible, 1 GB RAM - good for dev/staging
+#   db.t3.small : 2 GB RAM - better for staging with real workloads
+#   db.t3.medium: 4 GB RAM - recommended for production
+db_instance_class = "db.t3.micro"
+
+# Enable deletion protection on the RDS instance.
+# Set to true for production to prevent accidental deletion.
+deletion_protection = false
