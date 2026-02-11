@@ -1,0 +1,203 @@
+# =============================================================================
+# Version Upgrade Detection
+# =============================================================================
+#
+# Runs daily to check whether a newer Eve Horizon version is available in the
+# container registry. If a newer tag is found, opens a PR that bumps the
+# version in config/platform.yaml.
+#
+# Secrets required:
+#   REGISTRY_TOKEN - GitHub token with packages:read for ghcr.io/eve-horizon
+# =============================================================================
+
+name: Upgrade Check
+
+on:
+  schedule:
+    - cron: '0 8 * * *'       # Daily at 08:00 UTC
+
+  workflow_dispatch: {}        # Allow manual trigger
+
+permissions:
+  contents: write
+  pull-requests: write
+  packages: read
+
+jobs:
+  check-upgrade:
+    name: Check for Platform Upgrade
+    runs-on: ubuntu-latest
+
+    steps:
+      # -----------------------------------------------------------------------
+      # Checkout
+      # -----------------------------------------------------------------------
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------
+      # Read current version from config
+      # -----------------------------------------------------------------------
+      - name: Read platform config
+        id: config
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.40.5/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+          CONFIG=config/platform.yaml
+          echo "current_version=$(yq '.platform.version' $CONFIG)" >> $GITHUB_OUTPUT
+          echo "registry=$(yq '.platform.registry' $CONFIG)"       >> $GITHUB_OUTPUT
+
+      # -----------------------------------------------------------------------
+      # Query registry for latest version tag
+      # -----------------------------------------------------------------------
+      - name: Check latest available version
+        id: latest
+        env:
+          REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
+          REGISTRY: ${{ steps.config.outputs.registry }}
+          CURRENT: ${{ steps.config.outputs.current_version }}
+        run: |
+          # Use the GitHub Container Registry API to list tags for the api image.
+          # We look at the api image as the canonical version reference.
+          #
+          # The GHCR API returns tags via the OCI distribution spec.
+          # We filter for semver-like tags (digits and dots only) and sort them.
+
+          echo "Current version: ${CURRENT}"
+          echo "Registry: ${REGISTRY}"
+
+          # Extract org/image from registry path (e.g. ghcr.io/eve-horizon → eve-horizon)
+          ORG_IMAGE="${REGISTRY#ghcr.io/}"
+
+          # List tags from GHCR using the packages API
+          TAGS=$(curl -sL \
+            -H "Authorization: Bearer $(echo -n "$REGISTRY_TOKEN" | base64 -w0 2>/dev/null || echo -n "$REGISTRY_TOKEN" | base64)" \
+            "https://ghcr.io/v2/${ORG_IMAGE}/api/tags/list" 2>/dev/null \
+            | jq -r '.tags[]? // empty' 2>/dev/null || echo "")
+
+          if [[ -z "$TAGS" ]]; then
+            # Fallback: try using gh CLI with the packages API
+            echo "OCI tag list empty, trying GitHub packages API..."
+            TAGS=$(gh api \
+              -H "Accept: application/vnd.github+json" \
+              "/orgs/${ORG_IMAGE}/packages/container/api/versions" \
+              --jq '.[].metadata.container.tags[]' 2>/dev/null || echo "")
+          fi
+
+          if [[ -z "$TAGS" ]]; then
+            echo "Could not retrieve tags from registry"
+            echo "available=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Filter to semver-like tags (e.g. 0.1.28, 1.0.0) and sort
+          LATEST=$(echo "$TAGS" \
+            | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
+            | sort -t. -k1,1n -k2,2n -k3,3n \
+            | tail -n1)
+
+          if [[ -z "$LATEST" ]]; then
+            echo "No semver tags found in registry"
+            echo "available=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "Latest available version: ${LATEST}"
+          echo "latest=$LATEST" >> $GITHUB_OUTPUT
+
+          # Compare versions using sort -V
+          if [[ "$LATEST" == "$CURRENT" ]]; then
+            echo "Already on latest version"
+            echo "available=false" >> $GITHUB_OUTPUT
+          elif [[ "$(printf '%s\n%s' "$CURRENT" "$LATEST" | sort -V | tail -n1)" == "$LATEST" ]]; then
+            echo "Upgrade available: ${CURRENT} → ${LATEST}"
+            echo "available=true" >> $GITHUB_OUTPUT
+          else
+            echo "Current version is ahead of registry (${CURRENT} > ${LATEST})"
+            echo "available=false" >> $GITHUB_OUTPUT
+          fi
+
+      # -----------------------------------------------------------------------
+      # Check for existing PR (avoid duplicates)
+      # -----------------------------------------------------------------------
+      - name: Check for existing upgrade PR
+        if: steps.latest.outputs.available == 'true'
+        id: existing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LATEST: ${{ steps.latest.outputs.latest }}
+        run: |
+          BRANCH="chore/upgrade-eve-${LATEST}"
+          EXISTING=$(gh pr list --state open --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || echo "")
+
+          if [[ -n "$EXISTING" ]]; then
+            echo "PR #${EXISTING} already open for version ${LATEST}"
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      # -----------------------------------------------------------------------
+      # Create upgrade PR
+      # -----------------------------------------------------------------------
+      - name: Create upgrade branch and PR
+        if: steps.latest.outputs.available == 'true' && steps.existing.outputs.exists != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CURRENT: ${{ steps.config.outputs.current_version }}
+          LATEST: ${{ steps.latest.outputs.latest }}
+          REGISTRY: ${{ steps.config.outputs.registry }}
+        run: |
+          BRANCH="chore/upgrade-eve-${LATEST}"
+
+          # Configure git
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Create branch
+          git checkout -b "$BRANCH"
+
+          # Update version in platform.yaml
+          yq -i ".platform.version = \"${LATEST}\"" config/platform.yaml
+
+          # Commit and push
+          git add config/platform.yaml
+          git commit -m "chore: upgrade Eve Horizon to ${LATEST}"
+          git push origin "$BRANCH"
+
+          # Build PR body
+          PR_BODY="$(cat <<EOF
+          ## Upgrade Eve Horizon
+
+          | | Version |
+          |---|---|
+          | **Current** | \`${CURRENT}\` |
+          | **Available** | \`${LATEST}\` |
+          | **Registry** | \`${REGISTRY}\` |
+
+          ### What this PR does
+
+          Updates \`config/platform.yaml\` to pin platform version to **${LATEST}**.
+
+          After merging, trigger a deploy by either:
+          - Pushing a \`deploy-v${LATEST}\` tag
+          - Running the Deploy workflow manually
+
+          ### Release notes
+
+          Check the source repository for changes between versions:
+          \`\`\`
+          ${CURRENT} → ${LATEST}
+          \`\`\`
+
+          ---
+          *This PR was created automatically by the [Upgrade Check](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) workflow.*
+          EOF
+          )"
+
+          # Create PR
+          gh pr create \
+            --title "chore: upgrade Eve Horizon to ${LATEST}" \
+            --body "$PR_BODY" \
+            --label "upgrade,automated"

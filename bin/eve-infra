@@ -1,0 +1,654 @@
+#!/usr/bin/env bash
+# =============================================================================
+# eve-infra -- Operational CLI for an Eve Horizon deployment
+# =============================================================================
+#
+# Reads config from config/platform.yaml (relative to repo root).
+# Targets the Kubernetes namespace "eve" on the cluster identified by
+# KUBECONFIG or ~/.kube/eve-<name_prefix>.yaml.
+#
+# Usage: eve-infra <command> [args]
+# Run eve-infra --help for the full command list.
+# =============================================================================
+set -euo pipefail
+
+# ---------------------------------------------------------------------------
+# Resolve repo root (one level above this script's directory)
+# ---------------------------------------------------------------------------
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+CONFIG_FILE="$REPO_ROOT/config/platform.yaml"
+SECRETS_FILE="$REPO_ROOT/config/secrets.env"
+
+NAMESPACE="eve"
+
+# ---------------------------------------------------------------------------
+# Colors (disabled when stdout is not a terminal)
+# ---------------------------------------------------------------------------
+if [[ -t 1 ]]; then
+  BOLD='\033[1m'
+  DIM='\033[2m'
+  GREEN='\033[0;32m'
+  YELLOW='\033[0;33m'
+  RED='\033[0;31m'
+  CYAN='\033[0;36m'
+  RESET='\033[0m'
+else
+  BOLD='' DIM='' GREEN='' YELLOW='' RED='' CYAN='' RESET=''
+fi
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+die()  { echo -e "${RED}Error:${RESET} $*" >&2; exit 1; }
+info() { echo -e "${CYAN}=>${RESET} $*"; }
+warn() { echo -e "${YELLOW}Warning:${RESET} $*" >&2; }
+ok()   { echo -e "${GREEN}OK${RESET} $*"; }
+
+# Read a dotted key from platform.yaml using grep/sed (no yq dependency).
+# Handles simple top-level and one-level-nested keys.
+# Strips quotes, trailing comments, and whitespace.
+# Usage: cfg_get "platform.version"  =>  0.1.28
+cfg_get() {
+  local key="$1"
+  local raw
+  if [[ "$key" == *.* ]]; then
+    local parent="${key%%.*}"
+    local child="${key#*.}"
+    raw="$(sed -n "/^${parent}:/,/^[^ ]/{s/^  ${child}: *//p;}" "$CONFIG_FILE" | head -1)"
+  else
+    raw="$(sed -n "s/^${key}: *//p" "$CONFIG_FILE" | head -1)"
+  fi
+  # Strip inline comment (# ...), surrounding quotes, and trailing whitespace
+  raw="${raw%%#*}"            # remove comment
+  raw="${raw%"${raw##*[! ]}"}"  # trim trailing spaces
+  raw="${raw#\"}"             # strip leading quote
+  raw="${raw%\"}"             # strip trailing quote
+  raw="${raw%"${raw##*[! ]}"}"  # trim again after quote removal
+  echo "$raw"
+}
+
+# Resolve KUBECONFIG: env var > ~/.kube/eve-<name_prefix>.yaml > default
+resolve_kubeconfig() {
+  if [[ -n "${KUBECONFIG:-}" ]]; then
+    return
+  fi
+  local prefix
+  prefix="$(cfg_get name_prefix)"
+  local candidate="$HOME/.kube/eve-${prefix}.yaml"
+  if [[ -f "$candidate" ]]; then
+    export KUBECONFIG="$candidate"
+  fi
+  # else: fall through to kubectl's default (~/.kube/config)
+}
+
+require_kubectl() {
+  command -v kubectl &>/dev/null || die "kubectl is not installed."
+}
+
+require_config() {
+  [[ -f "$CONFIG_FILE" ]] || die "Config not found at $CONFIG_FILE"
+}
+
+# Map user-friendly service names to k8s resource names.
+# agent-runtime is a StatefulSet; everything else is a Deployment.
+declare -A SERVICE_MAP=(
+  [api]="deployment/eve-api"
+  [worker]="deployment/eve-worker"
+  [orchestrator]="deployment/eve-orchestrator"
+  [gateway]="deployment/eve-gateway"
+  [agent-runtime]="statefulset/eve-agent-runtime"
+  [buildkitd]="deployment/buildkitd"
+)
+
+declare -A SERVICE_LABELS=(
+  [api]="app.kubernetes.io/name=eve-api"
+  [worker]="app.kubernetes.io/name=eve-worker"
+  [orchestrator]="app.kubernetes.io/name=eve-orchestrator"
+  [gateway]="app.kubernetes.io/name=eve-gateway"
+  [agent-runtime]="app.kubernetes.io/name=eve-agent-runtime"
+  [buildkitd]="app.kubernetes.io/name=buildkitd"
+)
+
+VALID_SERVICES="api, worker, orchestrator, gateway, agent-runtime"
+
+resolve_service() {
+  local svc="${1:-}"
+  [[ -n "$svc" ]] || die "Service name required. Valid: $VALID_SERVICES"
+  [[ -n "${SERVICE_MAP[$svc]:-}" ]] || die "Unknown service '$svc'. Valid: $VALID_SERVICES"
+  echo "${SERVICE_MAP[$svc]}"
+}
+
+resolve_label() {
+  local svc="${1:-}"
+  [[ -n "${SERVICE_LABELS[$svc]:-}" ]] || die "Unknown service '$svc'. Valid: $VALID_SERVICES"
+  echo "${SERVICE_LABELS[$svc]}"
+}
+
+# ---------------------------------------------------------------------------
+# Commands
+# ---------------------------------------------------------------------------
+
+cmd_status() {
+  require_config
+  require_kubectl
+  resolve_kubeconfig
+
+  local version name_prefix env cloud
+  version="$(cfg_get 'platform.version')"
+  name_prefix="$(cfg_get 'name_prefix')"
+  env="$(cfg_get 'environment')"
+  cloud="$(cfg_get 'cloud')"
+  local api_host
+  api_host="$(cfg_get 'api_host')"
+
+  echo ""
+  echo -e "${BOLD}Eve Horizon Platform Status${RESET}"
+  echo -e "  Version:     ${GREEN}${version}${RESET}"
+  echo -e "  Environment: ${env}"
+  echo -e "  Cloud:       ${cloud}"
+  echo -e "  Name prefix: ${name_prefix}"
+  echo -e "  API host:    ${api_host}"
+  echo -e "  Namespace:   ${NAMESPACE}"
+  if [[ -n "${KUBECONFIG:-}" ]]; then
+    echo -e "  Kubeconfig:  ${DIM}${KUBECONFIG}${RESET}"
+  fi
+  echo ""
+
+  echo -e "${BOLD}Pods${RESET}"
+  kubectl get pods -n "$NAMESPACE" -o wide 2>/dev/null || warn "Could not reach cluster."
+  echo ""
+
+  echo -e "${BOLD}Services${RESET}"
+  kubectl get svc -n "$NAMESPACE" 2>/dev/null || true
+  echo ""
+}
+
+cmd_version() {
+  require_config
+  local version registry
+  version="$(cfg_get 'platform.version')"
+  registry="$(cfg_get 'platform.registry')"
+
+  echo -e "${BOLD}Current version:${RESET} ${GREEN}${version}${RESET}"
+  echo -e "${BOLD}Registry:${RESET}        ${registry}"
+  echo ""
+
+  # Attempt to query ghcr.io for the latest tag.
+  # This uses the OCI distribution API and requires no authentication for
+  # public packages, but will gracefully degrade if unavailable.
+  if command -v curl &>/dev/null; then
+    info "Checking for latest version at ${registry}..."
+    local tags_url="https://ghcr.io/v2/eve-horizon/api/tags/list"
+    local response
+    response="$(curl -sf "$tags_url" 2>/dev/null || true)"
+    if [[ -n "$response" ]] && command -v jq &>/dev/null; then
+      local latest
+      latest="$(echo "$response" | jq -r '.tags[]' 2>/dev/null \
+        | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
+        | sort -V | tail -1)"
+      if [[ -n "$latest" ]]; then
+        if [[ "$latest" == "$version" ]]; then
+          ok "You are on the latest version."
+        else
+          echo -e "${YELLOW}Latest available:${RESET} ${latest}"
+          echo "  Run: eve-infra upgrade $latest"
+        fi
+      else
+        echo -e "${DIM}Could not determine latest version from registry.${RESET}"
+      fi
+    else
+      echo -e "${DIM}Could not query registry (curl/jq unavailable or registry unreachable).${RESET}"
+      echo "  Check manually: https://github.com/orgs/eve-horizon/packages"
+    fi
+  fi
+}
+
+cmd_upgrade() {
+  local new_version="${1:-}"
+  [[ -n "$new_version" ]] || die "Usage: eve-infra upgrade <version>"
+  require_config
+
+  local old_version
+  old_version="$(cfg_get 'platform.version')"
+  local registry
+  registry="$(cfg_get 'platform.registry')"
+  local overlay
+  overlay="$(cfg_get 'overlay')"
+  [[ -z "$overlay" ]] && overlay="$(cfg_get 'cloud')"
+
+  if [[ "$old_version" == "$new_version" ]]; then
+    ok "Already at version ${new_version}. Nothing to do."
+    return
+  fi
+
+  info "Upgrading: ${old_version} -> ${new_version}"
+
+  # 1. Update platform.yaml
+  info "Updating config/platform.yaml..."
+  sed -i.bak "s/version: *\"${old_version}\"/version: \"${new_version}\"/" "$CONFIG_FILE"
+  rm -f "$CONFIG_FILE.bak"
+
+  # 2. Update image tags in overlay patches
+  local overlay_dir="$REPO_ROOT/k8s/overlays/${overlay}"
+  if [[ -d "$overlay_dir" ]]; then
+    info "Updating image tags in k8s/overlays/${overlay}/..."
+    local patch_file
+    for patch_file in "$overlay_dir"/*-patch.yaml; do
+      [[ -f "$patch_file" ]] || continue
+      # Replace registry/image:old_version or :latest with :new_version
+      sed -i.bak \
+        -e "s|image: *${registry}/\([^:]*\):${old_version}|image: ${registry}/\1:${new_version}|g" \
+        -e "s|image: *${registry}/\([^:]*\):latest|image: ${registry}/\1:${new_version}|g" \
+        "$patch_file"
+      rm -f "$patch_file.bak"
+    done
+  else
+    warn "Overlay directory not found: $overlay_dir (skipping patch update)"
+  fi
+
+  # 3. Offer to commit
+  ok "Files updated to version ${new_version}."
+  echo ""
+  echo "  Review changes:"
+  echo "    git diff"
+  echo ""
+  echo "  Commit and deploy:"
+  echo "    git add -A && git commit -m \"chore: upgrade eve platform to ${new_version}\""
+  echo "    eve-infra deploy"
+}
+
+cmd_deploy() {
+  require_config
+  require_kubectl
+  resolve_kubeconfig
+
+  local overlay
+  overlay="$(cfg_get 'overlay')"
+  [[ -z "$overlay" ]] && overlay="$(cfg_get 'cloud')"
+  local overlay_dir="$REPO_ROOT/k8s/overlays/${overlay}"
+
+  [[ -d "$overlay_dir" ]] || die "Overlay directory not found: $overlay_dir"
+
+  info "Building manifests with kustomize (overlay: ${overlay})..."
+  if command -v kustomize &>/dev/null; then
+    kustomize build "$overlay_dir" | kubectl apply -f - -n "$NAMESPACE"
+  else
+    kubectl apply -k "$overlay_dir" -n "$NAMESPACE"
+  fi
+
+  echo ""
+  info "Waiting for rollouts..."
+  local resource
+  for resource in \
+    deployment/eve-api \
+    deployment/eve-worker \
+    deployment/eve-orchestrator \
+    deployment/eve-gateway \
+    statefulset/eve-agent-runtime; do
+    echo -n "  ${resource}... "
+    if kubectl rollout status "$resource" -n "$NAMESPACE" --timeout=120s 2>/dev/null; then
+      echo -e "${GREEN}ready${RESET}"
+    else
+      echo -e "${RED}timed out${RESET}"
+    fi
+  done
+
+  echo ""
+  ok "Deploy complete."
+}
+
+cmd_secrets_sync() {
+  require_kubectl
+  resolve_kubeconfig
+
+  if [[ ! -f "$SECRETS_FILE" ]]; then
+    die "Secrets file not found at ${SECRETS_FILE}.
+  Create it from the example:
+    cp config/secrets.env.example config/secrets.env"
+  fi
+
+  info "Syncing secrets from config/secrets.env -> k8s secret 'eve-app' in namespace '${NAMESPACE}'..."
+
+  kubectl create secret generic eve-app \
+    --from-env-file="$SECRETS_FILE" \
+    --namespace="$NAMESPACE" \
+    --dry-run=client -o yaml \
+    | kubectl apply -f -
+
+  ok "Secret 'eve-app' updated."
+  echo ""
+  echo "  Services will pick up new values on next restart:"
+  echo "    eve-infra restart api"
+  echo "    eve-infra restart worker"
+}
+
+cmd_secrets_show() {
+  require_kubectl
+  resolve_kubeconfig
+
+  info "Configured keys in secret 'eve-app':"
+  echo ""
+  kubectl get secret eve-app -n "$NAMESPACE" -o json 2>/dev/null \
+    | jq -r '.data | keys[]' 2>/dev/null \
+    | sort \
+    || warn "Could not read secret 'eve-app'. It may not exist yet."
+}
+
+cmd_db_migrate() {
+  require_config
+  require_kubectl
+  resolve_kubeconfig
+
+  local job_name="eve-db-migrate"
+
+  # Delete previous completed/failed job if it exists (jobs are immutable)
+  if kubectl get job "$job_name" -n "$NAMESPACE" &>/dev/null; then
+    info "Deleting previous migration job..."
+    kubectl delete job "$job_name" -n "$NAMESPACE" --ignore-not-found
+  fi
+
+  local overlay
+  overlay="$(cfg_get 'overlay')"
+  [[ -z "$overlay" ]] && overlay="$(cfg_get 'cloud')"
+  local overlay_dir="$REPO_ROOT/k8s/overlays/${overlay}"
+
+  info "Applying migration job..."
+  if [[ -d "$overlay_dir" ]]; then
+    # Build with kustomize to get the overlay-patched job (correct image + DATABASE_URL)
+    if command -v kustomize &>/dev/null; then
+      kustomize build "$overlay_dir" \
+        | kubectl apply -f - -n "$NAMESPACE" --server-side --field-manager=eve-infra \
+        -l app.kubernetes.io/name=eve-db-migrate 2>/dev/null \
+        || kustomize build "$overlay_dir" | kubectl apply -f - -n "$NAMESPACE"
+    else
+      kubectl apply -k "$overlay_dir" -n "$NAMESPACE"
+    fi
+  else
+    kubectl apply -f "$REPO_ROOT/k8s/base/db-migrate-job.yaml" -n "$NAMESPACE"
+  fi
+
+  info "Waiting for migration to complete (timeout: 120s)..."
+  if kubectl wait --for=condition=complete "job/$job_name" -n "$NAMESPACE" --timeout=120s 2>/dev/null; then
+    ok "Migration complete."
+    echo ""
+    echo "  Logs:"
+    kubectl logs "job/$job_name" -n "$NAMESPACE" --tail=20 2>/dev/null || true
+  else
+    echo -e "${RED}Migration did not complete within timeout.${RESET}"
+    echo ""
+    echo "  Check logs:"
+    echo "    kubectl logs job/$job_name -n $NAMESPACE"
+    exit 1
+  fi
+}
+
+cmd_db_backup() {
+  require_config
+  local provider
+  provider="$(cfg_get 'database.provider')"
+
+  echo -e "${BOLD}Database Backup${RESET}"
+  echo ""
+
+  case "$provider" in
+    rds)
+      info "Database provider: AWS RDS"
+      echo "  RDS automated backups are managed by AWS."
+      echo ""
+      echo "  To create a manual snapshot:"
+      echo "    aws rds create-db-snapshot \\"
+      echo "      --db-instance-identifier <instance-id> \\"
+      echo "      --db-snapshot-identifier eve-backup-\$(date +%Y%m%d-%H%M%S)"
+      echo ""
+      echo "  To list existing snapshots:"
+      echo "    aws rds describe-db-snapshots --db-instance-identifier <instance-id>"
+      ;;
+    external)
+      info "Database provider: external"
+      echo "  Use pg_dump against your external database."
+      echo "    pg_dump \$DATABASE_URL > eve-backup-\$(date +%Y%m%d-%H%M%S).sql"
+      ;;
+    in-cluster)
+      info "Database provider: in-cluster PostgreSQL"
+      echo "  Run pg_dump inside the postgres pod:"
+      echo "    kubectl exec -n $NAMESPACE postgres-0 -- pg_dump -U eve eve > backup.sql"
+      ;;
+    *)
+      warn "Unknown database provider: $provider"
+      ;;
+  esac
+}
+
+cmd_db_connect() {
+  require_config
+  require_kubectl
+  resolve_kubeconfig
+
+  local provider
+  provider="$(cfg_get 'database.provider')"
+  local db_name
+  db_name="$(cfg_get 'database.name')"
+  [[ -z "$db_name" ]] && db_name="eve"
+  local db_user
+  db_user="$(cfg_get 'database.username')"
+  [[ -z "$db_user" ]] && db_user="eve"
+
+  case "$provider" in
+    in-cluster)
+      info "Connecting to in-cluster PostgreSQL..."
+      kubectl exec -it -n "$NAMESPACE" postgres-0 -- psql -U "$db_user" "$db_name"
+      ;;
+    rds|cloud-sql|external)
+      # Port-forward through the API pod (which has DATABASE_URL) as a SOCKS proxy
+      # is complex; instead, run psql in a temporary pod with the same secret.
+      info "Launching psql in a temporary pod (using eve-app secret for DATABASE_URL)..."
+      echo -e "${DIM}Press Ctrl+D or type \\q to exit.${RESET}"
+      echo ""
+      kubectl run eve-psql-session \
+        --rm -it \
+        --image=postgres:16-alpine \
+        --namespace="$NAMESPACE" \
+        --restart=Never \
+        --env="PGDATABASE=$db_name" \
+        --overrides='{
+          "spec": {
+            "containers": [{
+              "name": "psql",
+              "image": "postgres:16-alpine",
+              "stdin": true,
+              "tty": true,
+              "command": ["psql"],
+              "args": ["$(DATABASE_URL)"],
+              "envFrom": [{"secretRef": {"name": "eve-app"}}]
+            }]
+          }
+        }' \
+        -- psql 2>/dev/null \
+        || die "Failed to launch psql session. Ensure the eve-app secret contains DATABASE_URL."
+      ;;
+    *)
+      die "Unknown database provider: $provider"
+      ;;
+  esac
+}
+
+cmd_logs() {
+  local service="${1:-}"
+  [[ -n "$service" ]] || die "Usage: eve-infra logs <service>
+  Services: $VALID_SERVICES"
+
+  require_kubectl
+  resolve_kubeconfig
+
+  local label
+  label="$(resolve_label "$service")"
+  shift
+
+  info "Tailing logs for ${service} (${label})..."
+  kubectl logs -f -l "$label" -n "$NAMESPACE" --all-containers --prefix "$@"
+}
+
+cmd_restart() {
+  local service="${1:-}"
+  [[ -n "$service" ]] || die "Usage: eve-infra restart <service>
+  Services: $VALID_SERVICES"
+
+  require_kubectl
+  resolve_kubeconfig
+
+  local resource
+  resource="$(resolve_service "$service")"
+
+  info "Rolling restart: ${resource}..."
+  kubectl rollout restart "$resource" -n "$NAMESPACE"
+
+  echo -n "  Waiting for rollout... "
+  if kubectl rollout status "$resource" -n "$NAMESPACE" --timeout=120s 2>/dev/null; then
+    echo -e "${GREEN}ready${RESET}"
+  else
+    echo -e "${RED}timed out${RESET}"
+    exit 1
+  fi
+
+  ok "${service} restarted."
+}
+
+cmd_health() {
+  require_config
+
+  local api_host
+  api_host="$(cfg_get 'api_host')"
+  [[ -n "$api_host" ]] || die "api_host not set in config."
+
+  local url="https://${api_host}/health"
+  info "Checking ${url}..."
+
+  if ! command -v curl &>/dev/null; then
+    die "curl is required for health checks."
+  fi
+
+  local http_code body
+  http_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$url" 2>/dev/null || echo "000")"
+  body="$(curl -sf --max-time 10 "$url" 2>/dev/null || true)"
+
+  if [[ "$http_code" == "200" ]]; then
+    ok "API is healthy (HTTP $http_code)"
+    if [[ -n "$body" ]] && command -v jq &>/dev/null; then
+      echo "$body" | jq . 2>/dev/null || echo "$body"
+    elif [[ -n "$body" ]]; then
+      echo "$body"
+    fi
+  else
+    echo -e "${RED}UNHEALTHY${RESET} (HTTP $http_code)"
+    [[ -n "$body" ]] && echo "$body"
+    echo ""
+    echo "  Troubleshoot:"
+    echo "    eve-infra status"
+    echo "    eve-infra logs api"
+    exit 1
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# Help
+# ---------------------------------------------------------------------------
+
+show_help() {
+  cat <<'HELP'
+Eve Horizon Infrastructure CLI
+
+Usage: eve-infra <command> [args]
+
+Platform:
+  status              Show platform version, service health, pod status
+  version             Show current + latest available version
+  upgrade <version>   Update platform.yaml, patch overlays for new version
+  deploy              Apply current config to cluster (kustomize build | kubectl apply)
+  health              Run health check against the API endpoint
+
+Secrets:
+  secrets sync        Push config/secrets.env to k8s eve-app secret
+  secrets show        List which secret keys are configured
+
+Database:
+  db migrate          Run the database migration job
+  db backup           Show backup instructions for your database provider
+  db connect          Open an interactive psql session
+
+Operations:
+  logs <service>      Tail logs for a service
+  restart <service>   Rolling restart of a service
+
+Services: api, worker, orchestrator, gateway, agent-runtime
+
+Environment:
+  KUBECONFIG          Path to kubeconfig (auto-detected from name_prefix if unset)
+  Config file:        config/platform.yaml (relative to repo root)
+  Secrets file:       config/secrets.env (not committed; see secrets.env.example)
+
+Examples:
+  eve-infra status
+  eve-infra upgrade 0.2.0
+  eve-infra deploy
+  eve-infra secrets sync
+  eve-infra logs api
+  eve-infra restart worker
+  eve-infra db migrate
+  eve-infra health
+HELP
+}
+
+# ---------------------------------------------------------------------------
+# Main dispatcher
+# ---------------------------------------------------------------------------
+
+main() {
+  local command="${1:-}"
+  if [[ -z "$command" || "$command" == "--help" || "$command" == "-h" ]]; then
+    show_help
+    exit 0
+  fi
+  shift
+
+  case "$command" in
+    status)   cmd_status "$@" ;;
+    version)  cmd_version "$@" ;;
+    upgrade)  cmd_upgrade "$@" ;;
+    deploy)   cmd_deploy "$@" ;;
+    health)   cmd_health "$@" ;;
+    logs)     cmd_logs "$@" ;;
+    restart)  cmd_restart "$@" ;;
+
+    secrets)
+      local sub="${1:-}"
+      shift 2>/dev/null || true
+      case "$sub" in
+        sync) cmd_secrets_sync "$@" ;;
+        show) cmd_secrets_show "$@" ;;
+        *)    die "Usage: eve-infra secrets <sync|show>" ;;
+      esac
+      ;;
+
+    db)
+      local sub="${1:-}"
+      shift 2>/dev/null || true
+      case "$sub" in
+        migrate) cmd_db_migrate "$@" ;;
+        backup)  cmd_db_backup "$@" ;;
+        connect) cmd_db_connect "$@" ;;
+        *)       die "Usage: eve-infra db <migrate|backup|connect>" ;;
+      esac
+      ;;
+
+    *)
+      echo -e "${RED}Unknown command:${RESET} $command"
+      echo ""
+      show_help
+      exit 1
+      ;;
+  esac
+}
+
+main "$@"

@@ -1,0 +1,342 @@
+# =============================================================================
+# Deploy Eve Horizon Platform
+# =============================================================================
+#
+# Deploys all Eve services to the target cluster using the version and overlay
+# defined in config/platform.yaml.
+#
+# Triggers:
+#   - Tag push matching deploy-v* (e.g. deploy-v0.1.28)
+#   - Manual workflow_dispatch with optional version override
+#   - repository_dispatch from source repo CI (type: deploy, version in payload)
+#
+# Secrets required:
+#   KUBECONFIG       - Base64-encoded kubeconfig for the target cluster
+#   REGISTRY_TOKEN   - GitHub token with packages:read for ghcr.io/eve-horizon
+#   SLACK_WEBHOOK_URL - (optional) Slack incoming webhook for notifications
+# =============================================================================
+
+name: Deploy
+
+on:
+  push:
+    tags:
+      - 'deploy-v*'
+
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to deploy (e.g. 0.1.28). Leave empty to use config/platform.yaml.'
+        required: false
+        type: string
+
+  repository_dispatch:
+    types: [deploy]
+
+permissions:
+  contents: read
+  packages: read
+
+env:
+  NAMESPACE: eve
+
+jobs:
+  deploy:
+    name: Deploy Eve Platform
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      # -----------------------------------------------------------------------
+      # Checkout
+      # -----------------------------------------------------------------------
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------
+      # Read platform config
+      # -----------------------------------------------------------------------
+      - name: Read platform config
+        id: config
+        run: |
+          # Install yq for YAML parsing
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.40.5/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+          CONFIG=config/platform.yaml
+
+          echo "version=$(yq '.platform.version' $CONFIG)"     >> $GITHUB_OUTPUT
+          echo "registry=$(yq '.platform.registry' $CONFIG)"   >> $GITHUB_OUTPUT
+          echo "overlay=$(yq '.overlay' $CONFIG)"               >> $GITHUB_OUTPUT
+          echo "api_host=$(yq '.api_host' $CONFIG)"             >> $GITHUB_OUTPUT
+          echo "domain=$(yq '.domain' $CONFIG)"                 >> $GITHUB_OUTPUT
+          echo "environment=$(yq '.environment' $CONFIG)"       >> $GITHUB_OUTPUT
+          echo "name_prefix=$(yq '.name_prefix' $CONFIG)"       >> $GITHUB_OUTPUT
+
+      # -----------------------------------------------------------------------
+      # Resolve effective version
+      #   Priority: tag > workflow_dispatch input > repository_dispatch payload > config
+      # -----------------------------------------------------------------------
+      - name: Resolve version
+        id: version
+        run: |
+          VERSION=""
+
+          # 1. From tag push (deploy-v0.1.28 → 0.1.28)
+          if [[ "$GITHUB_REF" == refs/tags/deploy-v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/deploy-v}"
+          fi
+
+          # 2. From workflow_dispatch input
+          if [[ -n "${{ inputs.version }}" ]]; then
+            VERSION="${{ inputs.version }}"
+          fi
+
+          # 3. From repository_dispatch payload
+          if [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
+            PAYLOAD_VERSION="${{ github.event.client_payload.version }}"
+            if [[ -n "$PAYLOAD_VERSION" ]]; then
+              VERSION="$PAYLOAD_VERSION"
+            fi
+          fi
+
+          # 4. Fallback to config/platform.yaml
+          if [[ -z "$VERSION" ]]; then
+            VERSION="${{ steps.config.outputs.version }}"
+          fi
+
+          echo "Deploying version: $VERSION"
+          echo "effective=$VERSION" >> $GITHUB_OUTPUT
+
+      # -----------------------------------------------------------------------
+      # Install kubectl
+      # -----------------------------------------------------------------------
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: 'v1.29.0'
+
+      # -----------------------------------------------------------------------
+      # Configure kubeconfig
+      # -----------------------------------------------------------------------
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Verify cluster connectivity
+        run: |
+          kubectl cluster-info
+          kubectl get nodes
+
+      # -----------------------------------------------------------------------
+      # Login to container registry
+      # -----------------------------------------------------------------------
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.REGISTRY_TOKEN }}
+
+      # -----------------------------------------------------------------------
+      # Update image tags in overlay patches
+      # -----------------------------------------------------------------------
+      - name: Update image tags
+        env:
+          VERSION: ${{ steps.version.outputs.effective }}
+          REGISTRY: ${{ steps.config.outputs.registry }}
+          OVERLAY: ${{ steps.config.outputs.overlay }}
+        run: |
+          OVERLAY_DIR="k8s/overlays/${OVERLAY}"
+          echo "Updating image tags in ${OVERLAY_DIR} to version ${VERSION}"
+
+          # Update all service image tags in patch files
+          for SERVICE in api gateway orchestrator worker agent-runtime; do
+            sed -i "s|${REGISTRY}/${SERVICE}:[^ \"]*|${REGISTRY}/${SERVICE}:${VERSION}|g" ${OVERLAY_DIR}/*-patch.yaml
+          done
+
+          # Also update the EVE_RUNNER_IMAGE env var in worker patch
+          sed -i "s|${REGISTRY}/worker-full:[^ \"]*|${REGISTRY}/worker-full:${VERSION}|g" ${OVERLAY_DIR}/*-patch.yaml
+
+          echo "=== Updated patch files ==="
+          grep -rn "image:" ${OVERLAY_DIR}/ || true
+          grep -rn "EVE_RUNNER_IMAGE" ${OVERLAY_DIR}/ || true
+
+      # -----------------------------------------------------------------------
+      # Run database migrations
+      # -----------------------------------------------------------------------
+      - name: Run database migrations
+        env:
+          VERSION: ${{ steps.version.outputs.effective }}
+          OVERLAY: ${{ steps.config.outputs.overlay }}
+        run: |
+          # Delete any existing migration job
+          kubectl -n $NAMESPACE delete job eve-db-migrate --ignore-not-found
+
+          # Apply the migration job (image tag already updated by previous step)
+          kubectl apply -f k8s/overlays/${OVERLAY}/db-migrate-job-patch.yaml
+
+          # Wait for migration to complete
+          echo "Waiting for database migrations to complete..."
+          kubectl -n $NAMESPACE wait --for=condition=complete job/eve-db-migrate --timeout=120s
+
+          # Show migration logs
+          echo "=== Migration logs ==="
+          kubectl -n $NAMESPACE logs job/eve-db-migrate || true
+
+      # -----------------------------------------------------------------------
+      # Apply manifests
+      # -----------------------------------------------------------------------
+      - name: Apply manifests
+        env:
+          OVERLAY: ${{ steps.config.outputs.overlay }}
+        run: |
+          kubectl kustomize k8s/overlays/${OVERLAY} > /tmp/manifests.yaml
+
+          echo "=== Generated manifests (ingress check) ==="
+          grep -A 10 "kind: Ingress" /tmp/manifests.yaml || true
+
+          kubectl apply -f /tmp/manifests.yaml --server-side --force-conflicts
+
+      # -----------------------------------------------------------------------
+      # Annotate deployments with version metadata
+      # -----------------------------------------------------------------------
+      - name: Annotate deployments
+        env:
+          VERSION: ${{ steps.version.outputs.effective }}
+        run: |
+          DEPLOY_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          GIT_SHA="$(git rev-parse HEAD)"
+
+          for DEPLOY in eve-api eve-gateway eve-orchestrator eve-worker; do
+            kubectl -n $NAMESPACE annotate deployment/$DEPLOY --overwrite \
+              eve-horizon.dev/version="${VERSION}" \
+              eve-horizon.dev/git-sha="${GIT_SHA}" \
+              eve-horizon.dev/deployed-at="${DEPLOY_TIME}" \
+              eve-horizon.dev/deployed-by="github-actions"
+          done
+
+          kubectl -n $NAMESPACE annotate statefulset/eve-agent-runtime --overwrite \
+            eve-horizon.dev/version="${VERSION}" \
+            eve-horizon.dev/git-sha="${GIT_SHA}" \
+            eve-horizon.dev/deployed-at="${DEPLOY_TIME}" \
+            eve-horizon.dev/deployed-by="github-actions"
+
+      # -----------------------------------------------------------------------
+      # Wait for rollouts
+      # -----------------------------------------------------------------------
+      - name: Wait for API rollout
+        run: kubectl -n $NAMESPACE rollout status deployment/eve-api --timeout=180s
+
+      - name: Wait for Orchestrator rollout
+        run: kubectl -n $NAMESPACE rollout status deployment/eve-orchestrator --timeout=180s
+
+      - name: Wait for Worker rollout
+        run: kubectl -n $NAMESPACE rollout status deployment/eve-worker --timeout=180s
+
+      - name: Wait for Gateway rollout
+        run: kubectl -n $NAMESPACE rollout status deployment/eve-gateway --timeout=180s
+
+      - name: Wait for Agent Runtime rollout
+        run: kubectl -n $NAMESPACE rollout status statefulset/eve-agent-runtime --timeout=180s
+
+      # -----------------------------------------------------------------------
+      # Health check
+      # -----------------------------------------------------------------------
+      - name: Health check
+        env:
+          API_HOST: ${{ steps.config.outputs.api_host }}
+        run: |
+          sleep 10
+          for i in {1..10}; do
+            if curl -sfk "https://${API_HOST}/health" > /dev/null; then
+              echo "Health check passed on attempt $i"
+              exit 0
+            fi
+            echo "Health check attempt $i/10 failed, retrying in 5s..."
+            sleep 5
+          done
+          echo "Health check failed after 10 attempts"
+          exit 1
+
+      # -----------------------------------------------------------------------
+      # Diagnostics on failure
+      # -----------------------------------------------------------------------
+      - name: Diagnostics
+        if: failure()
+        run: |
+          echo "=== Pod status ==="
+          kubectl -n $NAMESPACE get pods -o wide || true
+          echo ""
+          echo "=== Recent events ==="
+          kubectl -n $NAMESPACE get events --sort-by=.lastTimestamp | tail -n 50 || true
+          echo ""
+          echo "=== Deployment descriptions ==="
+          for DEPLOY in eve-api eve-gateway eve-orchestrator eve-worker; do
+            echo "--- $DEPLOY ---"
+            kubectl -n $NAMESPACE describe deployment/$DEPLOY 2>/dev/null | tail -n 20 || true
+          done
+          echo "--- eve-agent-runtime ---"
+          kubectl -n $NAMESPACE describe statefulset/eve-agent-runtime 2>/dev/null | tail -n 20 || true
+
+      # -----------------------------------------------------------------------
+      # Rollback on failure
+      # -----------------------------------------------------------------------
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          echo "Deployment failed — rolling back all services..."
+          kubectl -n $NAMESPACE rollout undo deployment/eve-api || true
+          kubectl -n $NAMESPACE rollout undo deployment/eve-gateway || true
+          kubectl -n $NAMESPACE rollout undo deployment/eve-orchestrator || true
+          kubectl -n $NAMESPACE rollout undo deployment/eve-worker || true
+          kubectl -n $NAMESPACE rollout undo statefulset/eve-agent-runtime || true
+
+      # -----------------------------------------------------------------------
+      # Slack notification (optional)
+      # -----------------------------------------------------------------------
+      - name: Notify Slack on success
+        if: success() && env.SLACK_WEBHOOK_URL != ''
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          VERSION: ${{ steps.version.outputs.effective }}
+          ENVIRONMENT: ${{ steps.config.outputs.environment }}
+        run: |
+          curl -sX POST "$SLACK_WEBHOOK_URL" \
+            -H 'Content-Type: application/json' \
+            -d "{
+              \"text\": \":white_check_mark: Eve Horizon *${VERSION}* deployed to *${ENVIRONMENT}*\",
+              \"blocks\": [
+                {
+                  \"type\": \"section\",
+                  \"text\": {
+                    \"type\": \"mrkdwn\",
+                    \"text\": \":white_check_mark: *Eve Horizon ${VERSION}* deployed to *${ENVIRONMENT}*\n<https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|View workflow run>\"
+                  }
+                }
+              ]
+            }"
+
+      - name: Notify Slack on failure
+        if: failure() && env.SLACK_WEBHOOK_URL != ''
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          VERSION: ${{ steps.version.outputs.effective }}
+          ENVIRONMENT: ${{ steps.config.outputs.environment }}
+        run: |
+          curl -sX POST "$SLACK_WEBHOOK_URL" \
+            -H 'Content-Type: application/json' \
+            -d "{
+              \"text\": \":x: Eve Horizon *${VERSION}* deploy FAILED on *${ENVIRONMENT}*\",
+              \"blocks\": [
+                {
+                  \"type\": \"section\",
+                  \"text\": {
+                    \"type\": \"mrkdwn\",
+                    \"text\": \":x: *Eve Horizon ${VERSION}* deploy to *${ENVIRONMENT}* FAILED\n<https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|View workflow run>\"
+                  }
+                }
+              ]
+            }"

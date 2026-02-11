@@ -1,0 +1,143 @@
+# =============================================================================
+# Scheduled Health Check
+# =============================================================================
+#
+# Pings the Eve API health endpoint every 30 minutes. If the check fails,
+# creates a GitHub issue (if one isn't already open) and optionally sends
+# a Slack notification.
+#
+# Secrets:
+#   SLACK_WEBHOOK_URL - (optional) Slack incoming webhook for alerts
+# =============================================================================
+
+name: Health Check
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'    # Every 30 minutes
+
+  workflow_dispatch: {}        # Allow manual trigger for testing
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  health-check:
+    name: API Health Check
+    runs-on: ubuntu-latest
+
+    steps:
+      # -----------------------------------------------------------------------
+      # Read config
+      # -----------------------------------------------------------------------
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read platform config
+        id: config
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.40.5/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+          CONFIG=config/platform.yaml
+          echo "api_host=$(yq '.api_host' $CONFIG)"         >> $GITHUB_OUTPUT
+          echo "environment=$(yq '.environment' $CONFIG)"   >> $GITHUB_OUTPUT
+          echo "version=$(yq '.platform.version' $CONFIG)"  >> $GITHUB_OUTPUT
+
+      # -----------------------------------------------------------------------
+      # Health check with retries
+      # -----------------------------------------------------------------------
+      - name: Check health endpoint
+        id: health
+        env:
+          API_HOST: ${{ steps.config.outputs.api_host }}
+        run: |
+          HEALTHY=false
+          for i in {1..3}; do
+            HTTP_CODE=$(curl -sk -o /tmp/health-response.txt -w "%{http_code}" "https://${API_HOST}/health" 2>/dev/null || echo "000")
+            if [[ "$HTTP_CODE" == "200" ]]; then
+              HEALTHY=true
+              echo "Health check passed (attempt $i, HTTP $HTTP_CODE)"
+              cat /tmp/health-response.txt
+              break
+            fi
+            echo "Attempt $i/3 failed (HTTP $HTTP_CODE), retrying in 10s..."
+            sleep 10
+          done
+
+          echo "healthy=$HEALTHY" >> $GITHUB_OUTPUT
+
+          if [[ "$HEALTHY" != "true" ]]; then
+            echo "Health check FAILED after 3 attempts"
+            echo "Last response (HTTP $HTTP_CODE):"
+            cat /tmp/health-response.txt 2>/dev/null || echo "(no response body)"
+          fi
+
+      # -----------------------------------------------------------------------
+      # Create GitHub issue if unhealthy (avoid duplicates)
+      # -----------------------------------------------------------------------
+      - name: Create issue if unhealthy
+        if: steps.health.outputs.healthy != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ENVIRONMENT: ${{ steps.config.outputs.environment }}
+          API_HOST: ${{ steps.config.outputs.api_host }}
+          VERSION: ${{ steps.config.outputs.version }}
+        run: |
+          ISSUE_TITLE="Health check failed: ${ENVIRONMENT} (${API_HOST})"
+
+          # Check for an existing open issue with the same title
+          EXISTING=$(gh issue list --state open --search "in:title \"${ISSUE_TITLE}\"" --json number --jq '.[0].number' 2>/dev/null || echo "")
+
+          if [[ -n "$EXISTING" ]]; then
+            echo "Open issue #${EXISTING} already exists — adding comment"
+            gh issue comment "$EXISTING" --body "Health check failed again at $(date -u +%Y-%m-%dT%H:%M:%SZ).
+          Version: ${VERSION}
+          Workflow run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          else
+            echo "Creating new issue"
+            gh issue create \
+              --title "$ISSUE_TITLE" \
+              --label "incident,automated" \
+              --body "## Health Check Failure
+
+          **Environment:** ${ENVIRONMENT}
+          **API Host:** ${API_HOST}
+          **Platform Version:** ${VERSION}
+          **Detected at:** $(date -u +%Y-%m-%dT%H:%M:%SZ)
+          **Workflow run:** https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+          The API health endpoint at \`https://${API_HOST}/health\` failed to return HTTP 200 after 3 attempts.
+
+          ### Next Steps
+          1. Check the deploy workflow logs for recent failures
+          2. SSH to the server and inspect pod status: \`kubectl -n eve get pods\`
+          3. Check service logs: \`kubectl -n eve logs deployment/eve-api\`"
+          fi
+
+      # -----------------------------------------------------------------------
+      # Slack notification if unhealthy (optional)
+      # -----------------------------------------------------------------------
+      - name: Notify Slack if unhealthy
+        if: steps.health.outputs.healthy != 'true' && env.SLACK_WEBHOOK_URL != ''
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          ENVIRONMENT: ${{ steps.config.outputs.environment }}
+          API_HOST: ${{ steps.config.outputs.api_host }}
+          VERSION: ${{ steps.config.outputs.version }}
+        run: |
+          curl -sX POST "$SLACK_WEBHOOK_URL" \
+            -H 'Content-Type: application/json' \
+            -d "{
+              \"text\": \":rotating_light: Eve Horizon health check FAILED on *${ENVIRONMENT}*\",
+              \"blocks\": [
+                {
+                  \"type\": \"section\",
+                  \"text\": {
+                    \"type\": \"mrkdwn\",
+                    \"text\": \":rotating_light: *Health check failed* on *${ENVIRONMENT}*\nHost: \`${API_HOST}\`\nVersion: \`${VERSION}\`\n<https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|View workflow run>\"
+                  }
+                }
+              ]
+            }"
