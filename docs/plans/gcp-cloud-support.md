@@ -227,6 +227,12 @@ variable "gcp_region" {
   default     = "us-central1"
 }
 
+variable "gcp_zone" {
+  description = "GCP zone for zonal GKE cluster (e.g. us-central1-a)"
+  type        = string
+  default     = "us-central1-a"
+}
+
 variable "project_name" {
   description = "Project name for resource labeling"
   type        = string
@@ -472,7 +478,8 @@ user-deployed app workloads.
     - `master_ipv4_cidr_block = "172.16.0.0/28"`
   - `workload_identity_config` — Enable Workload Identity
   - `release_channel = "REGULAR"` — Managed upgrades
-  - Addons: `http_load_balancing`, `horizontal_pod_autoscaling`
+  - Addons: `http_load_balancing`, `horizontal_pod_autoscaling`,
+    `gcs_fuse_csi_driver_config`, `filestore_csi_driver_config`
 
 - `google_container_node_pool.default` — Core services pool:
   - Machine type: `e2-standard-2` (2 vCPU, 8 GB)
@@ -498,6 +505,11 @@ user-deployed app workloads.
   - Taints: `pool=apps:NoSchedule` — Only user-deployed apps schedule here
   - OAuth scopes: `cloud-platform`
 
+- `google_compute_address.ingress` — Regional static IP for the
+  nginx-ingress LoadBalancer service. Reserved in Terraform so DNS can
+  point to a stable address. Passed to the nginx-ingress Helm install
+  via `controller.service.loadBalancerIP`.
+
 **Variables:** `name_prefix`, `network_name`, `subnet_name`,
 `pods_range_name`, `services_range_name`, `default_node_machine_type`,
 `default_node_count`, `default_node_min`, `default_node_max`,
@@ -506,7 +518,7 @@ user-deployed app workloads.
 `boot_disk_size`, `allowed_api_cidrs`, `service_account_email`, `zone`
 
 **Outputs:** `cluster_name`, `cluster_endpoint`, `cluster_ca_certificate`,
-`kubeconfig_command`
+`kubeconfig_command`, `ingress_ip`
 
 #### Node Pool Design
 
@@ -598,6 +610,9 @@ On-demand GPU VM for Ollama, equivalent to the AWS Ollama module. This runs
 host is not a Kubernetes node).
 
 **Resources:**
+- `google_service_account.ollama` — Dedicated SA for the Ollama VM,
+  with `roles/compute.instanceGroupManager.admin` scoped to the MIG
+  so the idle-shutdown script can resize itself to 0
 - `google_compute_disk.ollama_models` — Persistent SSD for model weights
 - `google_compute_firewall.ollama_api` — Port 11434 from GKE node IPs
 - `google_compute_firewall.ollama_ssh` — SSH from allowed CIDRs
@@ -606,11 +621,13 @@ host is not a Kubernetes node).
   - `scheduling.preemptible = true` (Spot)
   - `scheduling.on_host_maintenance = "TERMINATE"` (required for GPU)
   - Startup script: NVIDIA driver, Ollama, disk mount, idle timer
-  - Service account with Compute Admin for self-shutdown
+  - `service_account.email = google_service_account.ollama.email`
   - Network tags: `["ollama"]`
 - `google_compute_instance_group_manager.ollama` — MIG:
   - `target_size = 0` (resting state: OFF)
   - Single zone
+- `google_project_iam_member.ollama_compute` — Grant the Ollama SA
+  `roles/compute.admin` for MIG self-resize
 
 **GPU zone auto-detection:**
 
@@ -752,6 +769,7 @@ module "sql" {
 module "gke" {
   source                     = "./modules/gke"
   name_prefix                = var.name_prefix
+  zone                       = var.gcp_zone
   network_name               = module.network.network_name
   subnet_name                = module.network.subnet_name
   pods_range_name            = module.network.pods_range_name
@@ -815,7 +833,12 @@ output "cluster_name" {
 
 output "kubeconfig_command" {
   description = "Command to configure kubectl"
-  value       = "gcloud container clusters get-credentials ${module.gke.cluster_name} --zone ${var.gcp_region} --project ${var.gcp_project_id}"
+  value       = "gcloud container clusters get-credentials ${module.gke.cluster_name} --zone ${var.gcp_zone} --project ${var.gcp_project_id}"
+}
+
+output "ingress_ip" {
+  description = "Static IP for the ingress load balancer"
+  value       = module.gke.ingress_ip
 }
 
 output "database_url" {
@@ -860,6 +883,7 @@ k8s/overlays/gcp/
   orchestrator-deployment-patch.yaml
   gateway-deployment-patch.yaml
   agent-runtime-patch.yaml
+  buildkit-patch.yaml
   db-migrate-job-patch.yaml
   api-ingress-patch.yaml
   gateway-ingress-patch.yaml
@@ -890,6 +914,27 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: eve-agent-runtime
+  namespace: eve
+spec:
+  template:
+    spec:
+      tolerations:
+        - key: pool
+          operator: Equal
+          value: agents
+          effect: NoSchedule
+      nodeSelector:
+        pool: agents
+```
+
+#### BuildKit Spot Pool Patch
+
+```yaml
+# buildkit-patch.yaml — schedule BuildKit onto agents spot pool
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: eve-buildkit
   namespace: eve
 spec:
   template:
@@ -1021,9 +1066,11 @@ The setup script installs cert-manager and creates pull secrets. For GKE,
 it also needs to:
 
 1. **Install nginx-ingress** (GKE doesn't include Traefik like k3s)
-2. **Enable Filestore CSI driver** (for ReadWriteMany PVCs)
-3. **Create the `eve` namespace** (k3s startup script does this; GKE needs
+2. **Create the `eve` namespace** (k3s startup script does this; GKE needs
    it in setup)
+
+Note: Filestore CSI driver is enabled as a GKE addon in Terraform
+(`filestore_csi_driver_config`), not in setup.sh.
 
 Add cloud-conditional blocks:
 
@@ -1031,10 +1078,13 @@ Add cloud-conditional blocks:
 CLOUD=$(grep '^cloud:' "$CONFIG_FILE" | awk '{print $2}')
 
 if [ "$CLOUD" = "gcp" ]; then
+  INGRESS_IP=$(terraform -chdir=terraform/gcp output -raw ingress_ip 2>/dev/null || true)
+
   info "Installing nginx-ingress controller..."
   helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
   helm install ingress-nginx ingress-nginx/ingress-nginx \
-    --namespace ingress-nginx --create-namespace
+    --namespace ingress-nginx --create-namespace \
+    ${INGRESS_IP:+--set controller.service.loadBalancerIP="$INGRESS_IP"}
 
   info "Creating eve namespace..."
   kubectl create namespace eve --dry-run=client -o yaml | kubectl apply -f -
@@ -1053,6 +1103,7 @@ fi
 # --- GCP Project ---
 gcp_project_id = "my-project-123"
 gcp_region     = "us-central1"
+gcp_zone       = "us-central1-a"          # Zonal cluster (free control plane)
 
 # --- Identity ---
 name_prefix = "eve-staging"
@@ -1134,7 +1185,7 @@ GCP deployment guide covering:
 | `terraform/gcp/modules/ollama/*.tf` (3 files) | **New** | always |
 | `terraform/gcp/modules/ollama/startup_script.sh.tpl` | **New** | always |
 | `k8s/overlays/gcp/kustomization.yaml` | **New** | ask |
-| `k8s/overlays/gcp/*-patch.yaml` (11 files) | **New** | ask |
+| `k8s/overlays/gcp/*-patch.yaml` (12 files, incl. buildkit) | **New** | ask |
 | `k8s/overlays/gcp/filestore-storageclass.yaml` | **New** | ask |
 | `config/platform.yaml` | **Edit** | never |
 | `bin/eve-infra` | **Edit** | always |
