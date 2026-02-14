@@ -169,6 +169,28 @@ agent_runtime:
   capacity: 8                           # [OPTIONAL] Default 8
 
 # -----------------------------------------------------------------------------
+# Ollama GPU Inference (optional)
+# -----------------------------------------------------------------------------
+
+ollama:
+  # Enable on-demand GPU inference via Ollama.
+  # Provisions a spot GPU instance that starts automatically when the API
+  # receives an inference request and stops after idle timeout.
+  enabled: false                              # [OPTIONAL] Set true to enable
+
+  # GPU instance type. Must be NVIDIA GPU-equipped.
+  #   g6.xlarge  : 1x L4,  24 GB VRAM, ~$0.25/hr spot  (recommended)
+  #   g5.xlarge  : 1x A10G, 24 GB VRAM, ~$0.30/hr spot
+  #   g6.2xlarge : 1x L4,  24 GB VRAM, 8 vCPU, 32 GB RAM
+  instance_type: g6.xlarge                    # [OPTIONAL]
+
+  # Persistent disk for model weights (survives stop/start).
+  disk_size_gb: 100                           # [OPTIONAL]
+
+  # Auto-stop after this many minutes of no inference requests.
+  idle_timeout_minutes: 30                    # [OPTIONAL]
+
+# -----------------------------------------------------------------------------
 # Overlay Selection
 # -----------------------------------------------------------------------------
 

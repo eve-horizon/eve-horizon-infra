@@ -31,6 +31,11 @@ output "kubeconfig_command" {
   value       = "ssh ubuntu@${module.ec2.public_ip} 'sudo cat /etc/rancher/k3s/k3s.yaml' | sed 's/127.0.0.1/${module.ec2.public_ip}/g' > ~/.kube/eve-${var.name_prefix}.yaml"
 }
 
+output "ollama_asg_name" {
+  description = "ASG name for the Ollama GPU host (set as EVE_OLLAMA_ASG_NAME)"
+  value       = var.ollama_enabled ? module.ollama[0].asg_name : null
+}
+
 output "next_steps" {
   description = "Helpful next steps after deployment"
   value       = <<-EOT

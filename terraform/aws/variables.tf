@@ -119,3 +119,31 @@ variable "deletion_protection" {
   type        = bool
   default     = false
 }
+
+# -----------------------------------------------------------------------------
+# Ollama GPU Host (optional)
+# -----------------------------------------------------------------------------
+
+variable "ollama_enabled" {
+  description = "Enable the on-demand Ollama GPU host for platform inference"
+  type        = bool
+  default     = false
+}
+
+variable "ollama_instance_type" {
+  description = "EC2 instance type for the Ollama GPU host (must have NVIDIA GPU)"
+  type        = string
+  default     = "g6.xlarge"
+}
+
+variable "ollama_volume_size" {
+  description = "EBS volume size in GB for Ollama model storage"
+  type        = number
+  default     = 100
+}
+
+variable "ollama_idle_timeout_minutes" {
+  description = "Minutes of inactivity before the GPU host auto-shuts down"
+  type        = number
+  default     = 30
+}

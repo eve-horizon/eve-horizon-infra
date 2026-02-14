@@ -191,6 +191,29 @@ If everything is healthy, your Eve Horizon instance is live.
 
 ---
 
+## GPU Inference (optional)
+
+Eve can provision an on-demand GPU instance for local LLM inference via Ollama.
+
+1. Set `ollama_enabled = true` in your `terraform.tfvars`
+2. Run `terraform apply`
+3. Add the Terraform outputs to your Eve deployment:
+   - `EVE_OLLAMA_BASE_URL` -- from the GPU instance's private IP
+   - `EVE_OLLAMA_ASG_NAME` -- from `terraform output ollama_asg_name`
+4. Redeploy Eve: the API auto-registers the GPU target on startup
+5. Register models via CLI:
+   ```bash
+   eve ollama model add --canonical llama-3.3-70b --provider ollama --slug llama3.3:70b-instruct-q4_K_M
+   ```
+
+The GPU starts cold (no cost). When an inference request arrives, Eve wakes
+the GPU (~90s), serves the request, and auto-stops after 30 minutes idle.
+
+**Cost:** Only pay for actual GPU time. EBS ($8/mo) is the only fixed cost.
+Typical staging usage: $20-35/mo.
+
+---
+
 ## Day-to-Day Operations
 
 ### Deploying Changes

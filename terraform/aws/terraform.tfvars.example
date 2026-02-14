@@ -94,3 +94,15 @@ db_instance_class = "db.t3.micro"
 # Enable deletion protection on the RDS instance.
 # Set to true for production to prevent accidental deletion.
 deletion_protection = false
+
+# -----------------------------------------------------------------------------
+# Ollama GPU Host (optional)
+# Enable to provision an on-demand GPU instance for platform-managed inference.
+# The GPU starts automatically on first inference request and stops after idle.
+# Requires a GPU-capable instance type (g6.xlarge, g5.xlarge, etc.)
+# -----------------------------------------------------------------------------
+
+# ollama_enabled              = true
+# ollama_instance_type        = "g6.xlarge"    # 1x L4, 24 GB VRAM
+# ollama_volume_size          = 100            # GB for model weights
+# ollama_idle_timeout_minutes = 30             # auto-stop after idle

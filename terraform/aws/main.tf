@@ -73,20 +73,92 @@ module "rds" {
 }
 
 # -----------------------------------------------------------------------------
+# IAM — k3s Node Role
+# Allows the k3s node (and its pods) to call AWS APIs.
+# Always created (free). Policies are added by optional modules.
+# -----------------------------------------------------------------------------
+resource "aws_iam_role" "k3s_node" {
+  name = "${var.name_prefix}-k3s-node-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect    = "Allow"
+        Principal = { Service = "ec2.amazonaws.com" }
+        Action    = "sts:AssumeRole"
+      }
+    ]
+  })
+
+  tags = { Name = "${var.name_prefix}-k3s-node-role" }
+}
+
+resource "aws_iam_instance_profile" "k3s_node" {
+  name = "${var.name_prefix}-k3s-node-profile"
+  role = aws_iam_role.k3s_node.name
+
+  tags = { Name = "${var.name_prefix}-k3s-node-profile" }
+}
+
+# -----------------------------------------------------------------------------
 # EC2 Module
 # Eve Horizon server instance (k3s single-node)
 # -----------------------------------------------------------------------------
 module "ec2" {
   source = "./modules/ec2"
 
-  name_prefix        = var.name_prefix
-  subnet_id          = module.network.public_subnet_id
-  security_group_ids = [module.security.ec2_security_group_id]
-  instance_type      = var.instance_type
-  root_volume_size   = var.root_volume_size
-  ssh_public_key     = var.ssh_public_key
-  database_url       = "postgresql://${var.db_username}:${var.db_password}@${module.rds.endpoint}:5432/${module.rds.database_name}"
-  domain             = var.domain
+  name_prefix               = var.name_prefix
+  subnet_id                 = module.network.public_subnet_id
+  security_group_ids        = [module.security.ec2_security_group_id]
+  instance_type             = var.instance_type
+  root_volume_size          = var.root_volume_size
+  ssh_public_key            = var.ssh_public_key
+  database_url              = "postgresql://${var.db_username}:${var.db_password}@${module.rds.endpoint}:5432/${module.rds.database_name}"
+  domain                    = var.domain
+  iam_instance_profile_name = aws_iam_instance_profile.k3s_node.name
+}
+
+# -----------------------------------------------------------------------------
+# Ollama GPU Host Module (optional)
+# On-demand spot GPU instance running Ollama
+# -----------------------------------------------------------------------------
+module "ollama" {
+  count  = var.ollama_enabled ? 1 : 0
+  source = "./modules/ollama"
+
+  name_prefix           = var.name_prefix
+  vpc_id                = module.network.vpc_id
+  subnet_id             = module.network.public_subnet_id
+  k3s_security_group_id = module.security.ec2_security_group_id
+  allowed_ssh_cidrs     = var.allowed_ssh_cidrs
+  instance_type         = var.ollama_instance_type
+  volume_size           = var.ollama_volume_size
+  idle_timeout_minutes  = var.ollama_idle_timeout_minutes
+  ssh_key_name          = module.ec2.key_pair_name
+}
+
+# IAM: let k3s node wake/query the Ollama ASG
+resource "aws_iam_role_policy" "k3s_ollama_wake" {
+  count = var.ollama_enabled ? 1 : 0
+  name  = "${var.name_prefix}-k3s-ollama-wake"
+  role  = aws_iam_role.k3s_node.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = "autoscaling:UpdateAutoScalingGroup"
+        Resource = module.ollama[0].asg_arn
+      },
+      {
+        Effect   = "Allow"
+        Action   = "autoscaling:DescribeAutoScalingGroups"
+        Resource = "*"
+      }
+    ]
+  })
 }
 
 # -----------------------------------------------------------------------------

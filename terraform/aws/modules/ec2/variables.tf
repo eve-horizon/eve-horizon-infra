@@ -43,3 +43,9 @@ variable "domain" {
   description = "Domain name for Eve Horizon"
   type        = string
 }
+
+variable "iam_instance_profile_name" {
+  description = "IAM instance profile name to attach (optional)"
+  type        = string
+  default     = ""
+}

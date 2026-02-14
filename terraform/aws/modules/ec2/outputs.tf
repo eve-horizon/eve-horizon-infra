@@ -14,3 +14,8 @@ output "private_ip" {
   description = "Private IP address of the EC2 instance"
   value       = aws_instance.main.private_ip
 }
+
+output "key_pair_name" {
+  description = "Name of the SSH key pair (for use by other modules)"
+  value       = aws_key_pair.main.key_name
+}
