@@ -21,6 +21,8 @@ CONFIG_FILE="$REPO_ROOT/config/platform.yaml"
 SECRETS_FILE="$REPO_ROOT/config/secrets.env"
 
 NAMESPACE="eve"
+SYNC_STATE_FILE="$REPO_ROOT/.upstream-sync.json"
+SYNC_EXAMPLE_FILE="$REPO_ROOT/.upstream-sync.example.json"
 
 # ---------------------------------------------------------------------------
 # Colors (disabled when stdout is not a terminal)
@@ -558,6 +560,292 @@ cmd_health() {
 }
 
 # ---------------------------------------------------------------------------
+# Upstream Sync
+# ---------------------------------------------------------------------------
+
+cmd_sync_status() {
+  echo ""
+  echo -e "${BOLD}Upstream Sync Status${RESET}"
+  echo ""
+
+  if [[ ! -f "$SYNC_STATE_FILE" ]]; then
+    echo -e "  State: ${YELLOW}not initialized${RESET}"
+    echo ""
+    echo "  Run: eve-infra sync init"
+    return
+  fi
+
+  if ! command -v jq &>/dev/null; then
+    die "jq is required for sync commands."
+  fi
+
+  local remote_url last_commit last_ts last_summary history_count
+  remote_url="$(jq -r '.upstream.repo' "$SYNC_STATE_FILE")"
+  last_commit="$(jq -r '.last_sync.commit // "never"' "$SYNC_STATE_FILE")"
+  last_ts="$(jq -r '.last_sync.timestamp // "never"' "$SYNC_STATE_FILE")"
+  last_summary="$(jq -r '.last_sync.summary // "n/a"' "$SYNC_STATE_FILE")"
+  history_count="$(jq '.history | length' "$SYNC_STATE_FILE")"
+
+  local remote_name
+  remote_name="$(jq -r '.upstream.remote_name' "$SYNC_STATE_FILE")"
+
+  echo -e "  Remote:     ${remote_name} -> ${remote_url}"
+  echo -e "  Last sync:  ${last_ts}"
+  if [[ "$last_commit" != "never" && "$last_commit" != "null" ]]; then
+    echo -e "  Commit:     ${DIM}${last_commit:0:12}${RESET}"
+    echo -e "  Summary:    ${last_summary}"
+  fi
+  echo -e "  Syncs:      ${history_count} total"
+
+  # Check if remote is configured
+  if git remote get-url "$remote_name" &>/dev/null; then
+    echo -e "  Git remote: ${GREEN}configured${RESET}"
+  else
+    echo -e "  Git remote: ${RED}not configured${RESET} (run: git remote add ${remote_name} ${remote_url})"
+  fi
+
+  echo ""
+}
+
+cmd_sync_init() {
+  if [[ -f "$SYNC_STATE_FILE" ]]; then
+    warn "Sync state already exists at .upstream-sync.json"
+    echo "  To re-initialize, delete the file first."
+    return
+  fi
+
+  if [[ ! -f "$SYNC_EXAMPLE_FILE" ]]; then
+    die "Template not found at .upstream-sync.example.json"
+  fi
+
+  if ! command -v jq &>/dev/null; then
+    die "jq is required for sync commands."
+  fi
+
+  info "Initializing upstream sync..."
+
+  # 1. Read upstream config from the example
+  local remote_name remote_url remote_branch
+  remote_name="$(jq -r '.upstream.remote_name' "$SYNC_EXAMPLE_FILE")"
+  remote_url="$(jq -r '.upstream.repo' "$SYNC_EXAMPLE_FILE")"
+  remote_branch="$(jq -r '.upstream.branch' "$SYNC_EXAMPLE_FILE")"
+
+  # 2. Add git remote if not present
+  if git remote get-url "$remote_name" &>/dev/null; then
+    info "Remote '${remote_name}' already exists."
+  else
+    info "Adding remote '${remote_name}' -> ${remote_url}"
+    git remote add "$remote_name" "$remote_url"
+  fi
+
+  # 3. Fetch upstream
+  info "Fetching ${remote_name}/${remote_branch}..."
+  git fetch "$remote_name" "$remote_branch" || die "Failed to fetch upstream. Check the URL and network."
+
+  # 4. Find merge-base
+  info "Finding merge-base..."
+  local merge_base
+  merge_base="$(git merge-base HEAD "${remote_name}/${remote_branch}" 2>/dev/null || true)"
+
+  if [[ -z "$merge_base" ]]; then
+    warn "No common ancestor found. Using oldest local commit as baseline."
+    merge_base="$(git rev-list --max-parents=0 HEAD | head -1)"
+  fi
+
+  # 5. Create state file from template
+  info "Creating .upstream-sync.json..."
+  local ts
+  ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+  jq --arg commit "$merge_base" \
+     --arg ts "$ts" \
+     --arg summary "Initialized from merge-base" \
+     '.last_sync.commit = $commit |
+      .last_sync.timestamp = $ts |
+      .last_sync.summary = $summary' \
+     "$SYNC_EXAMPLE_FILE" > "$SYNC_STATE_FILE"
+
+  echo ""
+  ok "Upstream sync initialized."
+  echo ""
+  echo -e "  Remote:     ${remote_name} -> ${remote_url}"
+  echo -e "  Merge-base: ${DIM}${merge_base:0:12}${RESET}"
+  echo -e "  State file: .upstream-sync.json"
+  echo ""
+  echo "  Next steps:"
+  echo "    eve-infra sync check     # See what's changed upstream"
+  echo "    git add .upstream-sync.json && git commit -m 'chore: init upstream sync'"
+}
+
+cmd_sync_check() {
+  if [[ ! -f "$SYNC_STATE_FILE" ]]; then
+    die "Sync not initialized. Run: eve-infra sync init"
+  fi
+
+  if ! command -v jq &>/dev/null; then
+    die "jq is required for sync commands."
+  fi
+
+  local remote_name remote_branch
+  remote_name="$(jq -r '.upstream.remote_name' "$SYNC_STATE_FILE")"
+  remote_branch="$(jq -r '.upstream.branch' "$SYNC_STATE_FILE")"
+  local last_commit
+  last_commit="$(jq -r '.last_sync.commit' "$SYNC_STATE_FILE")"
+
+  if [[ "$last_commit" == "null" || -z "$last_commit" ]]; then
+    die "No last sync commit recorded. Run: eve-infra sync init"
+  fi
+
+  # Fetch upstream
+  info "Fetching ${remote_name}/${remote_branch}..."
+  git fetch "$remote_name" "$remote_branch" 2>/dev/null || die "Failed to fetch upstream."
+
+  local upstream_head
+  upstream_head="$(git rev-parse "${remote_name}/${remote_branch}")"
+
+  if [[ "$upstream_head" == "$last_commit" ]]; then
+    ok "Already up to date with upstream."
+    return
+  fi
+
+  # Count commits
+  local commit_count
+  commit_count="$(git rev-list --count "${last_commit}..${upstream_head}" 2>/dev/null || echo "?")"
+
+  # Get changed files
+  local changed_files
+  changed_files="$(git diff --name-only "${last_commit}..${upstream_head}" 2>/dev/null)"
+
+  local total_files
+  total_files="$(echo "$changed_files" | grep -c . || echo 0)"
+
+  echo ""
+  echo -e "${BOLD}Upstream Changes${RESET}"
+  echo -e "  Commits:     ${YELLOW}${commit_count}${RESET} new"
+  echo -e "  Files:       ${total_files} changed"
+  echo -e "  Since:       $(jq -r '.last_sync.timestamp' "$SYNC_STATE_FILE")"
+  echo -e "  Last sync:   ${DIM}${last_commit:0:12}${RESET}"
+  echo -e "  Upstream at: ${DIM}${upstream_head:0:12}${RESET}"
+  echo ""
+
+  if [[ "$total_files" -gt 50 ]]; then
+    echo -e "  ${YELLOW}Large divergence detected (${total_files} files). Consider syncing incrementally.${RESET}"
+    echo ""
+  fi
+
+  # Categorize files by sync policy
+  local always_files=() ask_files=() never_files=() uncategorized_files=()
+  local always_patterns ask_patterns never_patterns
+
+  # Read patterns from state file
+  mapfile -t always_patterns < <(jq -r '.sync_policy.always[]' "$SYNC_STATE_FILE")
+  mapfile -t ask_patterns < <(jq -r '.sync_policy.ask[]' "$SYNC_STATE_FILE")
+  mapfile -t never_patterns < <(jq -r '.sync_policy.never[]' "$SYNC_STATE_FILE")
+
+  while IFS= read -r file; do
+    [[ -z "$file" ]] && continue
+    local matched=false
+
+    # Check never first (highest priority)
+    for pattern in "${never_patterns[@]}"; do
+      if _path_matches "$file" "$pattern"; then
+        never_files+=("$file")
+        matched=true
+        break
+      fi
+    done
+    $matched && continue
+
+    # Check always
+    for pattern in "${always_patterns[@]}"; do
+      if _path_matches "$file" "$pattern"; then
+        always_files+=("$file")
+        matched=true
+        break
+      fi
+    done
+    $matched && continue
+
+    # Check ask
+    for pattern in "${ask_patterns[@]}"; do
+      if _path_matches "$file" "$pattern"; then
+        ask_files+=("$file")
+        matched=true
+        break
+      fi
+    done
+    $matched && continue
+
+    uncategorized_files+=("$file")
+  done <<< "$changed_files"
+
+  # Display by category
+  if [[ ${#always_files[@]} -gt 0 ]]; then
+    echo -e "${GREEN}Auto-sync (always):${RESET} ${#always_files[@]} files"
+    for f in "${always_files[@]}"; do
+      echo -e "  ${DIM}${f}${RESET}"
+    done
+    echo ""
+  fi
+
+  if [[ ${#ask_files[@]} -gt 0 ]]; then
+    echo -e "${YELLOW}Review needed (ask):${RESET} ${#ask_files[@]} files"
+    for f in "${ask_files[@]}"; do
+      echo -e "  ${f}"
+    done
+    echo ""
+  fi
+
+  if [[ ${#never_files[@]} -gt 0 ]]; then
+    echo -e "${RED}Skipped (never):${RESET} ${#never_files[@]} files"
+    for f in "${never_files[@]}"; do
+      echo -e "  ${DIM}${f}${RESET}"
+    done
+    echo ""
+  fi
+
+  if [[ ${#uncategorized_files[@]} -gt 0 ]]; then
+    echo -e "${CYAN}Uncategorized:${RESET} ${#uncategorized_files[@]} files"
+    for f in "${uncategorized_files[@]}"; do
+      echo -e "  ${f}"
+    done
+    echo ""
+  fi
+
+  echo "  Next: create a sync branch and use the upstream-sync skill to apply changes."
+  echo "    git checkout -b sync/upstream-\$(date +%Y-%m-%d)"
+}
+
+# Match a file path against a sync policy pattern.
+# Patterns with * use glob matching (converted to regex).
+# Patterns ending in / match directory prefixes.
+# Otherwise exact match.
+_path_matches() {
+  local file="$1" pattern="$2"
+
+  # Glob patterns (must be checked before directory prefix, since
+  # patterns like terraform/*/modules/ have both * and trailing /)
+  if [[ "$pattern" == *'*'* ]]; then
+    # Convert glob to regex: * -> [^/]*
+    local regex="${pattern//\*/[^/]*}"
+    # If pattern ends with /, match as directory prefix
+    if [[ "$pattern" == */ ]]; then
+      [[ "$file" =~ ^${regex} ]] && return 0
+    else
+      [[ "$file" =~ ^${regex}$ ]] && return 0
+    fi
+  # Directory prefix: pattern ends with /
+  elif [[ "$pattern" == */ ]]; then
+    [[ "$file" == "${pattern}"* ]] && return 0
+  # Exact match
+  else
+    [[ "$file" == "$pattern" ]] && return 0
+  fi
+
+  return 1
+}
+
+# ---------------------------------------------------------------------------
 # Help
 # ---------------------------------------------------------------------------
 
@@ -583,6 +871,11 @@ Database:
   db backup           Show backup instructions for your database provider
   db connect          Open an interactive psql session
 
+Upstream Sync:
+  sync status         Show sync state (last sync, pending, remote URL)
+  sync init           First-time setup (add remote, find merge-base, create state)
+  sync check          Fetch upstream, show changes categorized by sync policy
+
 Operations:
   logs <service>      Tail logs for a service
   restart <service>   Rolling restart of a service
@@ -599,6 +892,7 @@ Examples:
   eve-infra upgrade 0.2.0
   eve-infra deploy
   eve-infra secrets sync
+  eve-infra sync check
   eve-infra logs api
   eve-infra restart worker
   eve-infra db migrate
@@ -645,6 +939,17 @@ main() {
         backup)  cmd_db_backup "$@" ;;
         connect) cmd_db_connect "$@" ;;
         *)       die "Usage: eve-infra db <migrate|backup|connect>" ;;
+      esac
+      ;;
+
+    sync)
+      local sub="${1:-}"
+      shift 2>/dev/null || true
+      case "$sub" in
+        status) cmd_sync_status "$@" ;;
+        init)   cmd_sync_init "$@" ;;
+        check)  cmd_sync_check "$@" ;;
+        *)      die "Usage: eve-infra sync <status|init|check>" ;;
       esac
       ;;
 

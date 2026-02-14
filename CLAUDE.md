@@ -47,3 +47,23 @@ eve skills install
 ```
 
 This reads `skills.txt` and installs from `skills/` into `.agent/skills/` + `.claude/skills/`. The `eve-infra-ops` skill provides operational guidance for debugging and managing this deployment.
+
+## Upstream Sync (Template Repo)
+
+This repo is an **infrastructure template**. Downstream users clone it (not fork) to deploy their own Eve Horizon instance. The upstream sync system keeps downstream repos in sync with template improvements.
+
+**For template maintainers** (this repo):
+- Always update `CHANGELOG.md` when making changes — include sync impact annotations
+- Use the sync policy tiers when deciding where new files belong
+- New shared infrastructure goes in "always" paths; instance-customizable files go in "ask" paths
+
+**For downstream repos:**
+- `.upstream-sync.json` tracks sync state (created by `eve-infra sync init`, committed to your repo)
+- `CHANGELOG.md` documents every template change with sync guidance per file
+- Use `eve-infra sync check` to see pending upstream changes categorized by policy
+- Use the `upstream-sync` skill for agent-driven sync with review of "ask" files
+
+**Sync policy tiers:**
+- **always** — shared infra overwritten from upstream (`k8s/base/`, `terraform/*/modules/`, `bin/eve-infra`, `scripts/`, `.github/workflows/`, `skills/`)
+- **never** — instance-specific, never touched (`config/platform.yaml`, `config/secrets.env`, `terraform/*/terraform.tfvars`)
+- **ask** — may have local customizations, review before accepting (`k8s/overlays/`, `terraform/*/main.tf`, `CLAUDE.md`, docs)
