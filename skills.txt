@@ -1,1 +1,5 @@
+# Eve Horizon Skill Packs
+# Public packs (eve-se + eve-work)
+https://github.com/incept5/eve-skillpacks
+
 ./skills

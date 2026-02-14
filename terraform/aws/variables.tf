@@ -133,7 +133,7 @@ variable "ollama_enabled" {
 variable "ollama_instance_type" {
   description = "EC2 instance type for the Ollama GPU host (must have NVIDIA GPU)"
   type        = string
-  default     = "g6.xlarge"
+  default     = "g5.xlarge"
 }
 
 variable "ollama_volume_size" {

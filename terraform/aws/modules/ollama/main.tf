@@ -167,6 +167,16 @@ resource "aws_launch_template" "ollama" {
   instance_type = var.instance_type
   key_name      = var.ssh_key_name
 
+  block_device_mappings {
+    device_name = "/dev/sda1"
+    ebs {
+      volume_size           = 50
+      volume_type           = "gp3"
+      encrypted             = true
+      delete_on_termination = true
+    }
+  }
+
   instance_market_options {
     market_type = "spot"
     spot_options {

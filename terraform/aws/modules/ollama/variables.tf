@@ -28,7 +28,7 @@ variable "allowed_ssh_cidrs" {
 variable "instance_type" {
   description = "EC2 instance type (must have NVIDIA GPU)"
   type        = string
-  default     = "g6.xlarge"
+  default     = "g5.xlarge"
 }
 
 variable "volume_size" {
