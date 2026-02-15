@@ -1,0 +1,29 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+  - filestore-storageclass.yaml
+namespace: eve
+patches:
+  - path: api-ingress-patch.yaml
+  - path: api-deployment-patch.yaml
+  - path: agent-runtime-deployment-patch.yaml
+  - path: buildkit-patch.yaml
+  - path: gateway-ingress-patch.yaml
+  - path: gateway-deployment-patch.yaml
+  - path: orchestrator-deployment-patch.yaml
+  - path: worker-deployment-patch.yaml
+  # Delete db-migrate-job from kustomize build — it's a one-shot job
+  # applied separately by the deploy workflow's migration step.
+  - target:
+      kind: Job
+      name: eve-db-migrate
+    patch: |
+      $patch: delete
+      apiVersion: batch/v1
+      kind: Job
+      metadata:
+        name: eve-db-migrate
+  - path: remove-postgres-statefulset.yaml
+  - path: remove-postgres-service.yaml
+  - path: remove-postgres-secret.yaml

@@ -1,0 +1,16 @@
+# Schedule BuildKit onto agents spot pool (alongside agent runtimes)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: buildkitd
+  namespace: eve
+spec:
+  template:
+    spec:
+      tolerations:
+        - key: pool
+          operator: Equal
+          value: agents
+          effect: NoSchedule
+      nodeSelector:
+        pool: agents

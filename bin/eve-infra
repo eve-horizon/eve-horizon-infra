@@ -87,6 +87,13 @@ resolve_kubeconfig() {
   local candidate="$HOME/.kube/eve-${prefix}.yaml"
   if [[ -f "$candidate" ]]; then
     export KUBECONFIG="$candidate"
+    return
+  fi
+  # GKE: kubeconfig is managed by gcloud, use default ~/.kube/config
+  local cloud
+  cloud="$(cfg_get 'cloud')"
+  if [[ "$cloud" == "gcp" ]] && command -v gcloud &>/dev/null; then
+    return
   fi
   # else: fall through to kubectl's default (~/.kube/config)
 }
@@ -412,6 +419,16 @@ cmd_db_backup() {
       echo ""
       echo "  To list existing snapshots:"
       echo "    aws rds describe-db-snapshots --db-instance-identifier <instance-id>"
+      ;;
+    cloud-sql)
+      info "Database provider: GCP Cloud SQL"
+      echo "  Cloud SQL automated backups are managed by GCP."
+      echo ""
+      echo "  To create an on-demand backup:"
+      echo "    gcloud sql backups create --instance=<instance-name>"
+      echo ""
+      echo "  To list existing backups:"
+      echo "    gcloud sql backups list --instance=<instance-name>"
       ;;
     external)
       info "Database provider: external"

@@ -48,16 +48,18 @@ Key fields to change:
 | Field | Example | Notes |
 |-------|---------|-------|
 | `name_prefix` | `acme-eve-prod` | Unique per deployment in the same cloud account |
-| `cloud` | `aws` | Only `aws` is supported today |
-| `region` | `eu-west-1` | AWS region for all resources |
-| `domain` | `eve.acme.com` | Must be under a Route53 hosted zone you control |
+| `cloud` | `aws` or `gcp` | Selects Terraform root + k8s overlay defaults |
+| `region` | `eu-west-1` or `us-central1` | Cloud region for resources |
+| `domain` | `eve.acme.com` | Must be under a managed DNS zone you control |
 | `api_host` | `api.eve.acme.com` | Convention: `api.<domain>` |
 | `app_domain` | `apps.acme.com` | Wildcard DNS recommended for deployed apps |
-| `route53_zone_id` | `Z0123456789ABC` | Found in AWS Console > Route53 |
+| `route53_zone_id` | `Z0123456789ABC` | Required for AWS (Route53) |
+| `gcp_project_id` | `my-project-id` | Required for GCP |
+| `dns_zone_name` | `example-com` | Required for GCP Cloud DNS |
 | `tls.email` | `ops@acme.com` | For Let's Encrypt certificate notifications |
 | `ssh_public_key` | `ssh-ed25519 AAAA...` | Contents of your `.pub` file |
 | `compute.type` | `m6i.xlarge` | See comments in the file for sizing guidance |
-| `database.provider` | `rds` | Use `rds` for production, `in-cluster` for dev |
+| `database.provider` | `rds` or `cloud-sql` | Managed DB provider should match cloud |
 | `network.allowed_ssh_cidrs` | `["203.0.113.42/32"]` | Restrict to your IP |
 
 The file is heavily commented -- read through it once before deploying.
@@ -88,7 +90,7 @@ openssl rand -base64 24 # -> used in DATABASE_URL
 Set at minimum:
 
 - `EVE_SECRETS_MASTER_KEY`, `EVE_INTERNAL_API_KEY`, `EVE_BOOTSTRAP_TOKEN`
-- `DATABASE_URL` -- constructed after Terraform provisions RDS (see step 4)
+- `DATABASE_URL` -- constructed from Terraform output after provisioning (see step 4)
 - `GHCR_USERNAME` + `GHCR_TOKEN` -- GitHub PAT with `read:packages` scope
 - `ANTHROPIC_API_KEY` and/or `OPENAI_API_KEY` -- at least one LLM provider
 - `GITHUB_TOKEN` -- PAT with `repo`, `read:org` scopes
@@ -98,16 +100,19 @@ Set at minimum:
 ### 4. Provision Infrastructure (Terraform)
 
 ```bash
+# Pick terraform root from config/platform.yaml (aws|gcp)
+CLOUD="$(grep '^cloud:' config/platform.yaml | awk '{print $2}')"
+
 # Create your Terraform variable file
-cp terraform/aws/terraform.tfvars.example terraform/aws/terraform.tfvars
-$EDITOR terraform/aws/terraform.tfvars
+cp "terraform/${CLOUD}/terraform.tfvars.example" "terraform/${CLOUD}/terraform.tfvars"
+$EDITOR "terraform/${CLOUD}/terraform.tfvars"
 ```
 
 Fill in values that match your `platform.yaml`. The key fields to set:
 
-- `name_prefix` -- must match `platform.yaml`
-- `aws_region` -- must match `platform.yaml`
-- `domain` and `route53_zone_id` -- must match `platform.yaml`
+- `name_prefix` and `environment` -- must match `platform.yaml`
+- `region` (canonical; legacy `aws_region`/`gcp_region` aliases still supported) -- must match `platform.yaml`
+- DNS fields (`domain` + `route53_zone_id` for AWS, `domain` + `dns_zone_name` for GCP)
 - `ssh_public_key` -- same key as `platform.yaml`
 - `db_password` -- generate a strong password
 - `allowed_ssh_cidrs` -- restrict to your IP
@@ -115,33 +120,31 @@ Fill in values that match your `platform.yaml`. The key fields to set:
 Then provision:
 
 ```bash
-cd terraform/aws
-terraform init
-terraform plan     # Review what will be created
-terraform apply    # Type "yes" to confirm
+terraform -chdir="terraform/${CLOUD}" init
+terraform -chdir="terraform/${CLOUD}" plan     # Review what will be created
+terraform -chdir="terraform/${CLOUD}" apply    # Type "yes" to confirm
 
 # Save the outputs -- you'll need them
-terraform output
-terraform output -raw database_url   # -> paste into secrets.env as DATABASE_URL
-terraform output -raw ssh_command     # -> use to connect to the server
+terraform -chdir="terraform/${CLOUD}" output
+terraform -chdir="terraform/${CLOUD}" output -raw database_url   # -> paste into secrets.env as DATABASE_URL
+terraform -chdir="terraform/${CLOUD}" output -raw ssh_command    # -> use to connect to the server
 ```
 
-Terraform creates: VPC, subnets, security groups, an EC2 instance running k3s, an RDS PostgreSQL instance, and Route53 DNS records.
+Terraform creates cloud networking, managed database, DNS records, and cluster compute for the selected provider.
 
 ### 5. Fetch Kubeconfig
 
-After Terraform completes and k3s initializes (allow 2-3 minutes), fetch the kubeconfig:
+After Terraform completes, configure kubeconfig:
 
 ```bash
-# The exact command is in terraform output
-terraform output -raw kubeconfig_command | bash
+# The exact command is in terraform output for your selected cloud
+terraform -chdir="terraform/${CLOUD}" output -raw kubeconfig_command | bash
 
 # Verify connectivity
-export KUBECONFIG=~/.kube/eve-<name_prefix>.yaml
 kubectl get nodes
 ```
 
-You should see one node in `Ready` state.
+You should see one or more nodes in `Ready` state.
 
 ### 6. Run Cluster Setup
 
@@ -284,15 +287,18 @@ bin/eve-infra db backup              # Show backup instructions for your provide
 ### SSH Access
 
 ```bash
+# Pick terraform root from config/platform.yaml (aws|gcp)
+CLOUD="$(grep '^cloud:' config/platform.yaml | awk '{print $2}')"
+
 # Get the SSH command from Terraform outputs
-terraform -chdir=terraform/aws output -raw ssh_command
+terraform -chdir="terraform/${CLOUD}" output -raw ssh_command
 
-# Or directly
-ssh ubuntu@<server-ip>
-
-# On the server, k3s commands require sudo
+# AWS (k3s): direct SSH
+ssh ubuntu@<server-ip>                  # if cloud=aws
 sudo kubectl get pods -n eve
-sudo k3s kubectl logs -n eve deployment/eve-api
+
+# GCP (GKE): node SSH for debugging
+gcloud compute ssh --project=<project> --zone=<zone> <node-name>  # if cloud=gcp
 ```
 
 ---
@@ -310,7 +316,8 @@ Deploys Eve to the cluster. Triggered by:
 - **Repository dispatch:** `type: deploy` with `version` in the payload (for cross-repo CI)
 
 Required GitHub secrets:
-- `KUBECONFIG` -- base64-encoded kubeconfig (`cat ~/.kube/eve-<prefix>.yaml | base64`)
+- `KUBECONFIG` -- required for direct kubeconfig mode (AWS/custom overlays)
+- `GCP_SA_KEY`, `GCP_PROJECT_ID`, `GKE_CLUSTER_NAME`, `GKE_ZONE` -- required for GCP deploys
 - `REGISTRY_TOKEN` -- GitHub PAT with `read:packages` scope
 - `SLACK_WEBHOOK_URL` -- (optional) for deploy notifications
 
@@ -413,7 +420,7 @@ kubectl describe clusterissuer letsencrypt-prod
 
 Common causes:
 - `tls.email` not set in `platform.yaml` (setup.sh warns about this)
-- DNS not yet propagated (Route53 changes can take a few minutes)
+- DNS not yet propagated (Route53/Cloud DNS changes can take a few minutes)
 - Using `letsencrypt-prod` during testing and hitting rate limits -- switch to `letsencrypt-staging` first
 
 ### Database Migration Fails
@@ -429,8 +436,8 @@ bin/eve-infra db migrate
 
 Common causes:
 - `DATABASE_URL` is incorrect in `secrets.env`
-- RDS security group does not allow connections from the EC2 instance (Terraform should handle this, but verify)
-- Database does not exist yet (Terraform's RDS module creates it)
+- Managed DB network access is misconfigured (Terraform should wire this, but verify)
+- Database instance does not exist yet (Terraform creates it for managed providers)
 
 ### Cannot Reach the API (Connection Refused / Timeout)
 
@@ -438,7 +445,9 @@ Common causes:
 2. Check the server is reachable: `curl -sk https://<server-ip>:443`
 3. Check the API pod is running: `kubectl get pods -n eve -l app.kubernetes.io/name=eve-api`
 4. Check the ingress: `kubectl get ingress -n eve`
-5. Check traefik (k3s default ingress): `kubectl logs -n kube-system -l app.kubernetes.io/name=traefik`
+5. Check ingress controller logs (`traefik` on k3s, `ingress-nginx` on GKE):
+   `kubectl logs -n kube-system -l app.kubernetes.io/name=traefik`
+   `kubectl logs -n ingress-nginx -l app.kubernetes.io/name=ingress-nginx`
 
 ### Deploy Workflow Fails
 
@@ -466,7 +475,8 @@ If you need to tear down and rebuild (non-production only):
 kubectl delete namespace eve
 
 # Destroy cloud infrastructure
-cd terraform/aws && terraform destroy
+CLOUD="$(grep '^cloud:' config/platform.yaml | awk '{print $2}')"
+terraform -chdir="terraform/${CLOUD}" destroy
 
 # Start fresh from step 4
 ```

@@ -65,13 +65,20 @@ jobs:
 
           CONFIG=config/platform.yaml
 
-          echo "version=$(yq '.platform.version' $CONFIG)"     >> $GITHUB_OUTPUT
-          echo "registry=$(yq '.platform.registry' $CONFIG)"   >> $GITHUB_OUTPUT
-          echo "overlay=$(yq '.overlay' $CONFIG)"               >> $GITHUB_OUTPUT
-          echo "api_host=$(yq '.api_host' $CONFIG)"             >> $GITHUB_OUTPUT
-          echo "domain=$(yq '.domain' $CONFIG)"                 >> $GITHUB_OUTPUT
-          echo "environment=$(yq '.environment' $CONFIG)"       >> $GITHUB_OUTPUT
-          echo "name_prefix=$(yq '.name_prefix' $CONFIG)"       >> $GITHUB_OUTPUT
+          CLOUD="$(yq '.cloud' "$CONFIG")"
+          OVERLAY="$(yq '.overlay' "$CONFIG")"
+          if [[ -z "$OVERLAY" || "$OVERLAY" == "null" ]]; then
+            OVERLAY="$CLOUD"
+          fi
+
+          echo "version=$(yq '.platform.version' "$CONFIG")"   >> $GITHUB_OUTPUT
+          echo "registry=$(yq '.platform.registry' "$CONFIG")" >> $GITHUB_OUTPUT
+          echo "cloud=$CLOUD"                                   >> $GITHUB_OUTPUT
+          echo "overlay=$OVERLAY"                               >> $GITHUB_OUTPUT
+          echo "api_host=$(yq '.api_host' "$CONFIG")"          >> $GITHUB_OUTPUT
+          echo "domain=$(yq '.domain' "$CONFIG")"              >> $GITHUB_OUTPUT
+          echo "environment=$(yq '.environment' "$CONFIG")"    >> $GITHUB_OUTPUT
+          echo "name_prefix=$(yq '.name_prefix' "$CONFIG")"    >> $GITHUB_OUTPUT
 
       # -----------------------------------------------------------------------
       # Resolve effective version
@@ -119,11 +126,25 @@ jobs:
       # -----------------------------------------------------------------------
       # Configure kubeconfig
       # -----------------------------------------------------------------------
-      - name: Configure kubeconfig
+      - name: Configure kubeconfig (direct)
+        if: steps.config.outputs.cloud != 'gcp'
         run: |
           mkdir -p ~/.kube
           echo "${{ secrets.KUBECONFIG }}" | base64 -d > ~/.kube/config
           chmod 600 ~/.kube/config
+
+      - name: Authenticate to GCP
+        if: steps.config.outputs.cloud == 'gcp'
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Configure GKE kubeconfig
+        if: steps.config.outputs.cloud == 'gcp'
+        run: |
+          gcloud container clusters get-credentials ${{ secrets.GKE_CLUSTER_NAME }} \
+            --zone ${{ secrets.GKE_ZONE }} \
+            --project ${{ secrets.GCP_PROJECT_ID }}
 
       - name: Verify cluster connectivity
         run: |

@@ -44,9 +44,13 @@ name_prefix: "eve-staging"              # [REQUIRED]
 
 # Cloud provider. Determines which Terraform root module and Kustomize
 # overlay are used during deployment.
-#   aws  - Amazon Web Services (EC2 + RDS + Route53)
-#   gcp  - Google Cloud Platform (planned)
+#   aws  - Amazon Web Services (EC2 + RDS + Route53 on k3s)
+#   gcp  - Google Cloud Platform (GKE + Cloud SQL + Cloud DNS)
 cloud: aws                              # [REQUIRED] aws | gcp
+
+# --- GCP-specific (required when cloud: gcp) ---
+# gcp_project_id: ""                    # [REQUIRED for GCP] GCP project ID
+# dns_zone_name: ""                     # [REQUIRED for GCP] Cloud DNS zone name
 
 # Cloud region where all resources are provisioned.
 region: eu-west-1                       # [REQUIRED] e.g. us-west-2, eu-west-1
@@ -93,7 +97,7 @@ tls:
 database:
   # Database provider.
   #   rds       - AWS RDS managed PostgreSQL (provisioned by Terraform)
-  #   cloud-sql - GCP Cloud SQL (planned)
+  #   cloud-sql - GCP Cloud SQL managed PostgreSQL (provisioned by Terraform)
   #   in-cluster - Dev-only PostgreSQL StatefulSet inside k3s
   #   external  - Bring your own PostgreSQL (set DATABASE_URL in secrets.env)
   provider: rds                         # [REQUIRED] rds | cloud-sql | in-cluster | external
@@ -117,10 +121,9 @@ database:
 # -----------------------------------------------------------------------------
 
 compute:
-  # EC2 / GCE instance type for the k3s server node.
-  #   t3.large    : 2 vCPU,  8 GB RAM  - minimum (small teams)
-  #   m6i.xlarge  : 4 vCPU, 16 GB RAM  - recommended
-  #   m6i.2xlarge : 8 vCPU, 32 GB RAM  - larger workloads
+  # Instance type for compute nodes.
+  #   AWS (EC2/k3s): t3.large, m6i.xlarge, m6i.2xlarge
+  #   GCP (GKE):     e2-standard-2, e2-standard-4, e2-standard-8
   type: m6i.xlarge                      # [REQUIRED]
 
   # Root disk size in GB. Must accommodate OS, k3s images, buildkit cache,

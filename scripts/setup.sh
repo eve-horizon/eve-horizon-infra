@@ -23,6 +23,11 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SECRETS_FILE="$REPO_ROOT/config/secrets.env"
 
 NAMESPACE="eve"
+CONFIG_FILE="$REPO_ROOT/config/platform.yaml"
+
+# Read cloud provider from platform.yaml
+CLOUD="$(sed -n 's/^cloud: *//p' "$CONFIG_FILE" | head -1 | tr -d '"' | tr -d "'")"
+CLOUD="${CLOUD:-aws}"
 
 # Colors
 if [[ -t 1 ]]; then
@@ -48,7 +53,35 @@ kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -
 ok "Namespace '${NAMESPACE}' exists."
 
 # -------------------------------------------------------------------------
-# 2. Install cert-manager (for TLS via Let's Encrypt)
+# 2. Install nginx-ingress (GCP only — GKE does not include Traefik)
+# -------------------------------------------------------------------------
+if [ "$CLOUD" = "gcp" ]; then
+  info "Installing nginx-ingress controller (GKE)..."
+  if kubectl get namespace ingress-nginx &>/dev/null; then
+    ok "ingress-nginx namespace already exists, skipping install."
+  else
+    if ! command -v helm &>/dev/null; then
+      die "helm is required to install nginx-ingress. Install it first:
+  https://helm.sh/docs/intro/install/"
+    fi
+
+    # Get ingress IP from terraform output if available
+    INGRESS_IP="$(terraform -chdir="$REPO_ROOT/terraform/gcp" output -raw ingress_ip 2>/dev/null || true)"
+
+    helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx --force-update
+    helm repo update
+
+    helm install ingress-nginx ingress-nginx/ingress-nginx \
+      --namespace ingress-nginx --create-namespace \
+      ${INGRESS_IP:+--set controller.service.loadBalancerIP="$INGRESS_IP"} \
+      --wait
+
+    ok "nginx-ingress installed."
+  fi
+fi
+
+# -------------------------------------------------------------------------
+# 3. Install cert-manager (for TLS via Let's Encrypt)
 # -------------------------------------------------------------------------
 info "Installing cert-manager..."
 if kubectl get namespace cert-manager &>/dev/null; then
@@ -75,6 +108,13 @@ fi
 # -------------------------------------------------------------------------
 # 3. Create ClusterIssuers for Let's Encrypt
 # -------------------------------------------------------------------------
+# Determine ingress class for ACME solver
+if [ "$CLOUD" = "gcp" ]; then
+  INGRESS_CLASS="nginx"
+else
+  INGRESS_CLASS="traefik"
+fi
+
 info "Creating Let's Encrypt ClusterIssuers..."
 
 # Read TLS email from platform.yaml (simple grep)
@@ -98,7 +138,7 @@ spec:
     solvers:
       - http01:
           ingress:
-            class: traefik
+            class: ${INGRESS_CLASS}
 ---
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
@@ -113,7 +153,7 @@ spec:
     solvers:
       - http01:
           ingress:
-            class: traefik
+            class: ${INGRESS_CLASS}
 EOF
 
 ok "ClusterIssuers created."

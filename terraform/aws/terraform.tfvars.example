@@ -1,108 +1,42 @@
-# Eve Horizon AWS Infrastructure - Example Configuration
-# Copy this file to terraform.tfvars and fill in your values.
-#
-# IMPORTANT: terraform.tfvars contains secrets - never commit it!
-# Add terraform.tfvars to your .gitignore.
+# =============================================================================
+# Eve Horizon — AWS Terraform Configuration
+# =============================================================================
 
-# -----------------------------------------------------------------------------
-# Project Naming
-# -----------------------------------------------------------------------------
-
-# Human-readable project name for tags
+# --- Identity ---
 project_name = "eve-horizon"
+environment  = "staging"
+name_prefix  = "eve-staging"
 
-# Environment name for tags (e.g., staging, production)
-environment = "staging"
+# --- AWS ---
+region = "us-west-2"
 
-# Prefix for all AWS resource names.
-# Use something short and unique to your deployment (e.g., "eve-staging", "myorg-eve").
-# This prevents naming collisions if you run multiple instances in the same AWS account.
-name_prefix = "REPLACE_WITH_PREFIX"   # e.g., "eve-staging"
-
-# -----------------------------------------------------------------------------
-# AWS Configuration
-# -----------------------------------------------------------------------------
-
-# AWS region (default: us-west-2)
-aws_region = "us-west-2"
-
-# -----------------------------------------------------------------------------
-# Network Configuration
-# -----------------------------------------------------------------------------
-
-# VPC CIDR block (default: 10.0.0.0/16)
+# --- Network ---
 vpc_cidr = "10.0.0.0/16"
+# CHANGE THIS — restrict to your IP/CIDR
+allowed_ssh_cidrs = ["0.0.0.0/0"]
 
-# CIDR blocks allowed to SSH to the EC2 instance and access the K8s API.
-# Use /32 for a single IP address.
-# Find your IP: curl -s https://checkip.amazonaws.com
-allowed_ssh_cidrs = [
-  "REPLACE_WITH_YOUR_IP/32",   # e.g., "203.0.113.42/32"
-]
+# --- Compute (single-node k3s host) ---
+# instance_type options:
+#   t3.large    - 2 vCPU / 8 GB
+#   m6i.xlarge  - 4 vCPU / 16 GB (recommended)
+#   m6i.2xlarge - 8 vCPU / 32 GB
+compute_type          = "m6i.xlarge"
+compute_disk_size_gb  = 50
+ssh_public_key  = "REPLACE_WITH_SSH_PUBLIC_KEY"
 
-# -----------------------------------------------------------------------------
-# EC2 Configuration
-# -----------------------------------------------------------------------------
+# --- Domain / DNS ---
+domain          = "eve.example.com"
+route53_zone_id = "Z0123456789ABCDEFGHIJ"
 
-# EC2 instance type
-#   m6i.xlarge  : 4 vCPU, 16 GB RAM - recommended for most deployments
-#   t3.large    : 2 vCPU,  8 GB RAM - minimum for small teams
-#   m6i.2xlarge : 8 vCPU, 32 GB RAM - for larger workloads
-instance_type = "m6i.xlarge"
-
-# Root EBS volume size in GB
-root_volume_size = 50
-
-# SSH public key for EC2 access.
-# Generate with: ssh-keygen -t ed25519 -f ~/.ssh/eve-server
-# Then paste the contents of ~/.ssh/eve-server.pub here.
-ssh_public_key = "REPLACE_WITH_SSH_PUBLIC_KEY"   # e.g., "ssh-ed25519 AAAA... you@example.com"
-
-# -----------------------------------------------------------------------------
-# DNS Configuration
-# -----------------------------------------------------------------------------
-
-# Domain name for Eve Horizon.
-# Must be a subdomain (or apex) within the Route53 hosted zone below.
-# Eve will be accessible at https://<domain> and subdomains like api.<domain>.
-domain = "REPLACE_WITH_DOMAIN"   # e.g., "eve.example.com"
-
-# Route53 hosted zone ID that owns the domain above.
-# Find it in the AWS Console under Route53 > Hosted Zones.
-route53_zone_id = "REPLACE_WITH_ZONE_ID"   # e.g., "Z0123456789ABCDEFGHIJ"
-
-# -----------------------------------------------------------------------------
-# Database Configuration
-# -----------------------------------------------------------------------------
-
-# PostgreSQL database name
-db_name = "eve"
-
-# PostgreSQL master username
-db_username = "eve"
-
-# PostgreSQL master password.
-# Generate a strong password: openssl rand -base64 24
-db_password = "REPLACE_WITH_STRONG_PASSWORD"
-
-# RDS instance class
-#   db.t3.micro : Free tier eligible, 1 GB RAM - good for dev/staging
-#   db.t3.small : 2 GB RAM - better for staging with real workloads
-#   db.t3.medium: 4 GB RAM - recommended for production
-db_instance_class = "db.t3.micro"
-
-# Enable deletion protection on the RDS instance.
-# Set to true for production to prevent accidental deletion.
+# --- Database (RDS PostgreSQL) ---
+db_name           = "eve"
+db_username       = "eve"
+db_password       = "CHANGE_ME"
+database_instance_class = "db.t3.micro"
 deletion_protection = false
 
-# -----------------------------------------------------------------------------
-# Ollama GPU Host (optional)
-# Enable to provision an on-demand GPU instance for platform-managed inference.
-# The GPU starts automatically on first inference request and stops after idle.
-# Requires a GPU-capable instance type (g6.xlarge, g5.xlarge, etc.)
-# -----------------------------------------------------------------------------
-
+# --- Ollama GPU (optional) ---
 # ollama_enabled              = true
-# ollama_instance_type        = "g6.xlarge"    # 1x L4, 24 GB VRAM
-# ollama_volume_size          = 100            # GB for model weights
-# ollama_idle_timeout_minutes = 30             # auto-stop after idle
+# ollama_compute_type         = "g6.xlarge"   # 1x L4, 24 GB VRAM
+# ollama_disk_size_gb         = 100
+# ollama_idle_timeout_minutes = 30

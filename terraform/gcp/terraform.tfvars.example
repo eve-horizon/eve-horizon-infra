@@ -1,0 +1,50 @@
+# =============================================================================
+# Eve Horizon — GCP Terraform Configuration
+# =============================================================================
+
+# --- GCP Project ---
+gcp_project_id = "my-project-123"
+region         = "us-central1"
+gcp_zone       = "us-central1-a"          # Zonal cluster (free control plane)
+
+# --- Identity ---
+name_prefix = "eve-staging"
+environment = "staging"
+
+# --- Network ---
+allowed_ssh_cidrs = ["0.0.0.0/0"]       # CHANGE THIS — restrict to your IP
+allowed_api_cidrs = ["0.0.0.0/0"]       # CHANGE THIS — restrict K8s API access
+
+# --- GKE Node Pools ---
+# Default pool runs core services (API, Worker, Orchestrator, Gateway)
+compute_type = "e2-standard-2"  # 2 vCPU, 8 GB
+default_node_min = 1
+default_node_max = 3
+
+# Agent pool runs agent-runtime pods on spot VMs (60-90% cheaper)
+agent_node_machine_type = "e2-standard-4"    # 4 vCPU, 16 GB
+agent_node_min = 0                           # Scales to zero when idle
+agent_node_max = 3
+
+# Apps pool runs user-deployed app services on spot VMs
+apps_node_machine_type = "e2-standard-2"     # 2 vCPU, 8 GB
+apps_node_min = 0                            # Scales to zero when idle
+apps_node_max = 5
+
+compute_disk_size_gb = 50
+
+# --- Domain ---
+domain        = "eve.example.com"
+dns_zone_name = "example-com"           # Cloud DNS managed zone name
+
+# --- Database ---
+db_password = "CHANGE_ME"
+# database_instance_class = "db-f1-micro"      # Dev/staging
+# database_instance_class = "db-custom-2-8192" # Production (2 vCPU, 8 GB)
+
+# --- Ollama GPU (optional) ---
+# ollama_enabled              = true
+# ollama_compute_type         = "g2-standard-4"
+# ollama_gpu_type             = "nvidia-l4"
+# ollama_disk_size_gb         = 100
+# ollama_idle_timeout_minutes = 30

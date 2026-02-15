@@ -1,0 +1,9 @@
+# Uncomment and configure for remote state storage.
+# Create the bucket first: gsutil mb gs://YOUR_BUCKET_NAME
+#
+# terraform {
+#   backend "gcs" {
+#     bucket = "eve-horizon-tfstate"
+#     prefix = "terraform/state"
+#   }
+# }

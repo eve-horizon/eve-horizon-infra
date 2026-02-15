@@ -13,8 +13,10 @@ config/
 k8s/
   base/                  # Shared Kubernetes manifests
   overlays/aws/          # AWS-specific patches (images, secrets, ingress, TLS)
+  overlays/gcp/          # GCP-specific patches (nginx ingress, node affinity, Filestore)
 
 terraform/aws/           # Terraform modules (network, ec2, rds, dns, security)
+terraform/gcp/           # Terraform modules (network, gke, sql, dns, ollama)
 
 bin/eve-infra            # Operational CLI (status, deploy, logs, db, secrets)
 
@@ -26,7 +28,9 @@ bin/eve-infra            # Operational CLI (status, deploy, logs, db, secrets)
 
 ## Kubeconfig
 
-Place your kubeconfig at `config/kubeconfig.yaml` (gitignored). The CLI and kubectl will auto-detect it. Ensure it uses the server's **public IP**, not `127.0.0.1`.
+**AWS (k3s):** Place your kubeconfig at `config/kubeconfig.yaml` (gitignored). The CLI and kubectl will auto-detect it. Ensure it uses the server's **public IP**, not `127.0.0.1`.
+
+**GCP (GKE):** Run `gcloud container clusters get-credentials <cluster> --zone <zone>`. The CLI auto-detects `~/.kube/config` when `cloud: gcp`.
 
 ## Key Commands
 

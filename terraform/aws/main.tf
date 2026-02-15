@@ -5,31 +5,13 @@
 # database, DNS records, and security groups. Suitable for staging,
 # production, or any named environment.
 
-terraform {
-  required_version = ">= 1.5.0"
-
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
-    }
-    tls = {
-      source  = "hashicorp/tls"
-      version = "~> 4.0"
-    }
-  }
-}
-
-provider "aws" {
-  region = var.aws_region
-
-  default_tags {
-    tags = {
-      Project     = var.project_name
-      Environment = var.environment
-      ManagedBy   = "terraform"
-    }
-  }
+locals {
+  effective_region               = (var.region != null && trimspace(var.region) != "") ? trimspace(var.region) : var.aws_region
+  effective_instance_type        = (var.compute_type != null && trimspace(var.compute_type) != "") ? trimspace(var.compute_type) : var.instance_type
+  effective_root_volume_size     = var.compute_disk_size_gb != null ? var.compute_disk_size_gb : var.root_volume_size
+  effective_db_instance_class    = (var.database_instance_class != null && trimspace(var.database_instance_class) != "") ? trimspace(var.database_instance_class) : var.db_instance_class
+  effective_ollama_instance_type = (var.ollama_compute_type != null && trimspace(var.ollama_compute_type) != "") ? trimspace(var.ollama_compute_type) : var.ollama_instance_type
+  effective_ollama_volume_size   = var.ollama_disk_size_gb != null ? var.ollama_disk_size_gb : var.ollama_volume_size
 }
 
 # -----------------------------------------------------------------------------
@@ -68,7 +50,7 @@ module "rds" {
   db_name             = var.db_name
   db_username         = var.db_username
   db_password         = var.db_password
-  db_instance_class   = var.db_instance_class
+  db_instance_class   = local.effective_db_instance_class
   deletion_protection = var.deletion_protection
 }
 
@@ -111,8 +93,8 @@ module "ec2" {
   name_prefix               = var.name_prefix
   subnet_id                 = module.network.public_subnet_id
   security_group_ids        = [module.security.ec2_security_group_id]
-  instance_type             = var.instance_type
-  root_volume_size          = var.root_volume_size
+  instance_type             = local.effective_instance_type
+  root_volume_size          = local.effective_root_volume_size
   ssh_public_key            = var.ssh_public_key
   database_url              = "postgresql://${var.db_username}:${var.db_password}@${module.rds.endpoint}:5432/${module.rds.database_name}"
   domain                    = var.domain
@@ -132,8 +114,8 @@ module "ollama" {
   subnet_id             = module.network.public_subnet_id
   k3s_security_group_id = module.security.ec2_security_group_id
   allowed_ssh_cidrs     = var.allowed_ssh_cidrs
-  instance_type         = var.ollama_instance_type
-  volume_size           = var.ollama_volume_size
+  instance_type         = local.effective_ollama_instance_type
+  volume_size           = local.effective_ollama_volume_size
   idle_timeout_minutes  = var.ollama_idle_timeout_minutes
   ssh_key_name          = module.ec2.key_pair_name
 }

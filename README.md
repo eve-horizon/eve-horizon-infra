@@ -2,18 +2,19 @@
 
 Infrastructure-as-code template for deploying the [Eve Horizon](https://github.com/eve-horizon) platform. Create a private copy of this repo, fill in your configuration, and deploy a fully working Eve instance to your own cloud account.
 
-**Current cloud support:** AWS (EC2 + RDS + Route53 on k3s)
+**Current cloud support:** AWS (k3s + RDS + Route53) and GCP (GKE + Cloud SQL + Cloud DNS)
 
 ## Prerequisites
 
 | Tool | Version | Purpose |
 |------|---------|---------|
 | [Terraform](https://developer.hashicorp.com/terraform/install) | >= 1.5 | Provision cloud infrastructure |
-| [kubectl](https://kubernetes.io/docs/tasks/tools/) | >= 1.28 | Interact with the k3s cluster |
+| [kubectl](https://kubernetes.io/docs/tasks/tools/) | >= 1.28 | Interact with the Kubernetes cluster |
 | [Helm](https://helm.sh/docs/intro/install/) | v3 | Install cert-manager |
 | [gh](https://cli.github.com/) | any | GitHub CLI (for automated upgrade PRs) |
 | bash | 4+ | Run `eve-infra` and setup scripts |
-| AWS CLI | v2 | Configure credentials for Terraform |
+| AWS CLI | v2 | Configure credentials for AWS deployments |
+| [gcloud CLI](https://cloud.google.com/sdk/docs/install) | latest | Configure credentials for GCP deployments |
 
 ## Quick Start
 
@@ -27,9 +28,12 @@ cp config/secrets.env.example config/secrets.env
 #    Edit config/secrets.env    -- set API keys, DB password, registry creds
 
 # 3. Provision cloud resources
-cp terraform/aws/terraform.tfvars.example terraform/aws/terraform.tfvars
+#    Uses cloud from config/platform.yaml (aws|gcp)
+CLOUD="$(grep '^cloud:' config/platform.yaml | awk '{print $2}')"
+cp "terraform/${CLOUD}/terraform.tfvars.example" "terraform/${CLOUD}/terraform.tfvars"
 #    Edit terraform.tfvars with values matching platform.yaml
-cd terraform/aws && terraform init && terraform apply
+terraform -chdir="terraform/${CLOUD}" init
+terraform -chdir="terraform/${CLOUD}" apply
 
 # 4. Set up the cluster (cert-manager, secrets, registry)
 ./scripts/setup.sh
@@ -56,19 +60,25 @@ eve-horizon-infra/
 ├── k8s/
 │   ├── base/                  # Kustomize base manifests (all services)
 │   └── overlays/
-│       └── aws/               # AWS-specific patches (RDS, ALB, images)
+│       ├── aws/               # AWS-specific patches (k3s + RDS wiring)
+│       └── gcp/               # GCP-specific patches (GKE + Cloud SQL wiring)
 ├── terraform/
-│   └── aws/                   # Terraform root module
+│   ├── aws/                   # AWS root module (EC2/k3s, RDS, Route53)
+│   │   ├── providers.tf
+│   │   ├── main.tf
+│   │   ├── variables.tf
+│   │   ├── outputs.tf
+│   │   ├── backend.tf.example
+│   │   ├── terraform.tfvars.example
+│   │   └── modules/
+│   └── gcp/                   # GCP root module (GKE, Cloud SQL, Cloud DNS)
+│       ├── providers.tf
 │       ├── main.tf
 │       ├── variables.tf
 │       ├── outputs.tf
+│       ├── backend.tf.example
 │       ├── terraform.tfvars.example
 │       └── modules/
-│           ├── network/       # VPC, subnets, routing
-│           ├── security/      # Security groups, SSH key pair
-│           ├── ec2/           # k3s server instance
-│           ├── rds/           # Managed PostgreSQL
-│           └── dns/           # Route53 records
 └── .github/workflows/
     ├── deploy.yml             # Push-to-deploy (tag, manual, or dispatch)
     ├── health-check.yml       # Scheduled health monitoring (every 30 min)
@@ -81,7 +91,7 @@ All deployment settings live in **`config/platform.yaml`** -- a single, well-com
 
 Secrets live in **`config/secrets.env`** (git-ignored). See `config/secrets.env.example` for every required and optional key.
 
-For Terraform variables, copy `terraform/aws/terraform.tfvars.example` to `terraform/aws/terraform.tfvars` and fill in values that match your `platform.yaml`.
+For Terraform variables, copy `terraform/<cloud>/terraform.tfvars.example` to `terraform/<cloud>/terraform.tfvars` and fill in values that match your `platform.yaml`.
 
 ## CLI Reference
 
