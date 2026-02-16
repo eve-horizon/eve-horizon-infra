@@ -100,6 +100,8 @@ The `bin/eve-infra` script is the day-to-day operational interface:
 ```
 eve-infra status              # Platform overview + pod status
 eve-infra version             # Current and latest available version
+eve-infra kubeconfig doctor   # Validate config/kubeconfig.yaml + connectivity
+eve-infra kubeconfig refresh  # Regenerate config/kubeconfig.yaml (aws/eks)
 eve-infra upgrade <version>   # Bump version in config + overlays
 eve-infra deploy              # Apply manifests to cluster
 eve-infra health              # Hit the API health endpoint
@@ -117,6 +119,14 @@ eve-infra restart <service>   # Rolling restart
 
 Run `bin/eve-infra --help` for the complete reference.
 
+## Kube Context Safety
+
+Safety guardrails:
+- Canonical kubeconfig is `config/kubeconfig.yaml` (repo-local single source of truth).
+- `bin/eve-infra` and `scripts/setup.sh` force this kubeconfig path and ignore external `KUBECONFIG` values.
+- For `cloud: aws` + `compute.model: eks`, context must match `<name_prefix>-cluster` (or ARN context ending in that cluster).
+- Use `eve-infra kubeconfig refresh` to regenerate and `eve-infra kubeconfig doctor` to verify.
+- Emergency override: `EVE_KUBE_GUARD_BYPASS=1` (intended only for explicit break-glass use).
 ## Further Reading
 
 - **[DEPLOYMENT.md](DEPLOYMENT.md)** -- First-time deployment walkthrough, day-to-day operations, monitoring, and troubleshooting

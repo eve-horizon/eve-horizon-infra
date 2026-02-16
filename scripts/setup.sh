@@ -8,7 +8,7 @@
 # kustomize manifests.
 #
 # Prerequisites:
-#   - kubectl configured to reach your cluster (KUBECONFIG set or default)
+#   - config/kubeconfig.yaml configured to reach your target cluster
 #   - helm v3 installed (for cert-manager)
 #   - config/secrets.env populated (see config/secrets.env.example)
 #
@@ -21,6 +21,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SECRETS_FILE="$REPO_ROOT/config/secrets.env"
+KUBECONFIG_FILE="$REPO_ROOT/config/kubeconfig.yaml"
 
 NAMESPACE="eve"
 CONFIG_FILE="$REPO_ROOT/config/platform.yaml"
@@ -28,6 +29,10 @@ CONFIG_FILE="$REPO_ROOT/config/platform.yaml"
 # Read cloud provider from platform.yaml
 CLOUD="$(sed -n 's/^cloud: *//p' "$CONFIG_FILE" | head -1 | tr -d '"' | tr -d "'")"
 CLOUD="${CLOUD:-aws}"
+COMPUTE_MODEL="$(sed -n '/^compute:/,/^[^ ]/{s/^  model: *//p;}' "$CONFIG_FILE" | head -1 | sed 's/[[:space:]]*#.*$//' | tr -d '"' | tr -d "'" | xargs)"
+COMPUTE_MODEL="${COMPUTE_MODEL:-k3s}"
+NAME_PREFIX="$(sed -n 's/^name_prefix: *//p' "$CONFIG_FILE" | head -1 | sed 's/[[:space:]]*#.*$//' | tr -d '"' | tr -d "'" | xargs)"
+NAME_PREFIX="${NAME_PREFIX:-eve}"
 
 # Colors
 if [[ -t 1 ]]; then
@@ -41,9 +46,56 @@ ok()   { echo -e "${GREEN}OK${RESET} $*"; }
 warn() { echo -e "${YELLOW}Warning:${RESET} $*" >&2; }
 die()  { echo -e "${RED}Error:${RESET} $*" >&2; exit 1; }
 
+resolve_kubeconfig() {
+  if [[ ! -f "$KUBECONFIG_FILE" ]]; then
+    if [[ "$CLOUD" == "aws" && "$COMPUTE_MODEL" == "eks" ]]; then
+      die "Missing kubeconfig: $KUBECONFIG_FILE
+Generate it with:
+  ./bin/eve-infra kubeconfig refresh
+Then verify with:
+  ./bin/eve-infra kubeconfig doctor"
+    fi
+    die "Missing kubeconfig: $KUBECONFIG_FILE
+Create config/kubeconfig.yaml for this deployment, then verify with:
+  ./bin/eve-infra kubeconfig doctor"
+  fi
+
+  if [[ -n "${KUBECONFIG:-}" && "$KUBECONFIG" != "$KUBECONFIG_FILE" ]]; then
+    warn "Ignoring external KUBECONFIG='$KUBECONFIG' and using canonical '$KUBECONFIG_FILE'."
+  fi
+  export KUBECONFIG="$KUBECONFIG_FILE"
+}
+
+assert_safe_kube_context() {
+  if [[ "${EVE_KUBE_GUARD_BYPASS:-0}" == "1" ]]; then
+    warn "Bypassing kube context guard (EVE_KUBE_GUARD_BYPASS=1)."
+    return
+  fi
+
+  local ctx expected_cluster
+  ctx="$(kubectl config current-context 2>/dev/null || true)"
+  [[ -n "$ctx" ]] || die "kubectl has no current context configured."
+
+  expected_cluster="${NAME_PREFIX}-cluster"
+
+  if [[ "$CLOUD" == "aws" && "$COMPUTE_MODEL" == "eks" ]]; then
+    if [[ "$ctx" != *":cluster/${expected_cluster}" && "$ctx" != "$expected_cluster" ]]; then
+      die "Unsafe kube context '$ctx' for aws/eks. Expected context for '${expected_cluster}'.
+Switch context first or intentionally override with EVE_KUBE_GUARD_BYPASS=1."
+    fi
+  elif [[ "$ctx" == arn:aws:eks:* || "$ctx" == *":cluster/"* ]]; then
+    die "Unsafe kube context '$ctx' for cloud='$CLOUD' compute.model='$COMPUTE_MODEL'.
+Switch context first or intentionally override with EVE_KUBE_GUARD_BYPASS=1."
+  fi
+
+  info "Using kube context: ${ctx}"
+}
 echo ""
 echo -e "${BOLD}Eve Horizon -- First-Time Cluster Setup${RESET}"
 echo ""
+
+resolve_kubeconfig
+assert_safe_kube_context
 
 # -------------------------------------------------------------------------
 # 1. Create namespace

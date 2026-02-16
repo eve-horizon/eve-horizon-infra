@@ -4,8 +4,8 @@
 # =============================================================================
 #
 # Reads config from config/platform.yaml (relative to repo root).
-# Targets the Kubernetes namespace "eve" on the cluster identified by
-# KUBECONFIG or ~/.kube/eve-<name_prefix>.yaml.
+# Targets the Kubernetes namespace "eve" using the repo-local kubeconfig:
+#   config/kubeconfig.yaml
 #
 # Usage: eve-infra <command> [args]
 # Run eve-infra --help for the full command list.
@@ -19,8 +19,10 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CONFIG_FILE="$REPO_ROOT/config/platform.yaml"
 SECRETS_FILE="$REPO_ROOT/config/secrets.env"
+KUBECONFIG_FILE="$REPO_ROOT/config/kubeconfig.yaml"
 
 NAMESPACE="eve"
+EVE_EFFECTIVE_CONTEXT=""
 SYNC_STATE_FILE="$REPO_ROOT/.upstream-sync.json"
 SYNC_EXAMPLE_FILE="$REPO_ROOT/.upstream-sync.example.json"
 
@@ -71,41 +73,102 @@ cfg_get() {
   echo "$raw"
 }
 
-# Resolve KUBECONFIG: env var > config/kubeconfig.yaml > ~/.kube/eve-<prefix>.yaml > default
+# Resolve KUBECONFIG to the repo-local canonical file.
 resolve_kubeconfig() {
-  if [[ -n "${KUBECONFIG:-}" ]]; then
-    return
-  fi
-  # Local repo kubeconfig (gitignored, convenient for agents)
-  local local_kube="$REPO_ROOT/config/kubeconfig.yaml"
-  if [[ -f "$local_kube" ]]; then
-    export KUBECONFIG="$local_kube"
-    return
-  fi
-  local prefix
-  prefix="$(cfg_get name_prefix)"
-  local candidate="$HOME/.kube/eve-${prefix}.yaml"
-  if [[ -f "$candidate" ]]; then
-    export KUBECONFIG="$candidate"
-    return
-  fi
-  # GKE: kubeconfig is managed by gcloud, use default ~/.kube/config
-  local cloud
+  local target="$KUBECONFIG_FILE"
+  local cloud compute_model
   cloud="$(cfg_get 'cloud')"
-  if [[ "$cloud" == "gcp" ]] && command -v gcloud &>/dev/null; then
-    return
+  compute_model="$(cfg_get 'compute.model')"
+
+  if [[ ! -f "$target" ]]; then
+    if [[ "$cloud" == "aws" && "$compute_model" == "eks" ]]; then
+      die "Missing kubeconfig: $target
+Generate it with:
+  eve-infra kubeconfig refresh
+Then verify with:
+  eve-infra kubeconfig doctor"
+    fi
+    die "Missing kubeconfig: $target
+Create config/kubeconfig.yaml for this deployment, then verify with:
+  eve-infra kubeconfig doctor"
   fi
-  # else: fall through to kubectl's default (~/.kube/config)
+
+  # Ignore external KUBECONFIG to avoid cross-repo context contamination.
+  if [[ -n "${KUBECONFIG:-}" && "$KUBECONFIG" != "$target" ]]; then
+    warn "Ignoring external KUBECONFIG='$KUBECONFIG' and using canonical '$target'."
+  fi
+  export KUBECONFIG="$target"
 }
 
 require_kubectl() {
   command -v kubectl &>/dev/null || die "kubectl is not installed."
 }
 
+require_aws() {
+  command -v aws &>/dev/null || die "aws CLI is required (for kubeconfig refresh)."
+}
+
 require_config() {
   [[ -f "$CONFIG_FILE" ]] || die "Config not found at $CONFIG_FILE"
 }
 
+current_kube_context() {
+  local args=()
+  [[ -n "${KUBECONFIG:-}" ]] && args+=(--kubeconfig "$KUBECONFIG")
+  kubectl "${args[@]}" config current-context 2>/dev/null || true
+}
+
+assert_safe_kube_context() {
+  local intent="${1:-read}"
+
+  if [[ "${EVE_KUBE_GUARD_BYPASS:-0}" == "1" ]]; then
+    warn "Bypassing kube context guard for ${intent} operations (EVE_KUBE_GUARD_BYPASS=1)."
+    return
+  fi
+
+  local cloud compute_model prefix ctx expected_cluster
+  cloud="$(cfg_get 'cloud')"
+  compute_model="$(cfg_get 'compute.model')"
+  prefix="$(cfg_get 'name_prefix')"
+  ctx="$(current_kube_context)"
+
+  [[ -n "$ctx" ]] || die "kubectl has no current context. Configure kube access before running eve-infra."
+
+  expected_cluster="${prefix}-cluster"
+
+  # AWS EKS: enforce explicit cluster match.
+  if [[ "$cloud" == "aws" && "$compute_model" == "eks" ]]; then
+    if [[ "$ctx" != *":cluster/${expected_cluster}" && "$ctx" != "$expected_cluster" ]]; then
+      die "Unsafe kube context '$ctx' for aws/eks. Expected context for '${expected_cluster}'.
+Switch context first or intentionally override with EVE_KUBE_GUARD_BYPASS=1."
+    fi
+    EVE_EFFECTIVE_CONTEXT="$ctx"
+    return
+  fi
+
+  # Non-EKS paths: block obvious EKS contexts.
+  if [[ "$ctx" == arn:aws:eks:* || "$ctx" == *":cluster/"* ]]; then
+    die "Unsafe kube context '$ctx' for cloud='$cloud' compute.model='${compute_model:-unset}'.
+Switch context first or intentionally override with EVE_KUBE_GUARD_BYPASS=1."
+  fi
+
+  EVE_EFFECTIVE_CONTEXT="$ctx"
+}
+
+kube() {
+  local args=()
+  [[ -n "${KUBECONFIG:-}" ]] && args+=(--kubeconfig "$KUBECONFIG")
+  [[ -n "${EVE_EFFECTIVE_CONTEXT:-}" ]] && args+=(--context "$EVE_EFFECTIVE_CONTEXT")
+  kubectl "${args[@]}" "$@"
+}
+
+require_cluster_access() {
+  local intent="${1:-read}"
+  require_config
+  require_kubectl
+  resolve_kubeconfig
+  assert_safe_kube_context "$intent"
+}
 # Map user-friendly service names to k8s resource names.
 # agent-runtime is a StatefulSet; everything else is a Deployment.
 declare -A SERVICE_MAP=(
@@ -172,11 +235,11 @@ cmd_status() {
   echo ""
 
   echo -e "${BOLD}Pods${RESET}"
-  kubectl get pods -n "$NAMESPACE" -o wide 2>/dev/null || warn "Could not reach cluster."
+  kube get pods -n "$NAMESPACE" -o wide 2>/dev/null || warn "Could not reach cluster."
   echo ""
 
   echo -e "${BOLD}Services${RESET}"
-  kubectl get svc -n "$NAMESPACE" 2>/dev/null || true
+  kube get svc -n "$NAMESPACE" 2>/dev/null || true
   echo ""
 }
 
@@ -218,6 +281,85 @@ cmd_version() {
       echo "  Check manually: https://github.com/orgs/eve-horizon/packages"
     fi
   fi
+}
+
+cmd_kubeconfig_doctor() {
+  require_config
+  require_kubectl
+  resolve_kubeconfig
+
+  local cloud compute_model prefix ctx expected_cluster
+  cloud="$(cfg_get 'cloud')"
+  compute_model="$(cfg_get 'compute.model')"
+  prefix="$(cfg_get 'name_prefix')"
+  expected_cluster="${prefix}-cluster"
+  ctx="$(current_kube_context)"
+
+  [[ -n "$ctx" ]] || die "kubeconfig exists but has no current context: $KUBECONFIG"
+  assert_safe_kube_context read
+
+  info "Validating Kubernetes API connectivity..."
+  kube cluster-info >/dev/null 2>&1 || die "Unable to reach cluster with $KUBECONFIG (context: $ctx)"
+
+  ok "Kubeconfig is healthy."
+  echo ""
+  echo "  Kubeconfig:  $KUBECONFIG"
+  echo "  Context:     $ctx"
+  if [[ "$cloud" == "aws" && "$compute_model" == "eks" ]]; then
+    echo "  Expected:    ${expected_cluster} (or arn:...:cluster/${expected_cluster})"
+  fi
+}
+
+cmd_kubeconfig_refresh() {
+  require_config
+  require_kubectl
+
+  local cloud compute_model
+  cloud="$(cfg_get 'cloud')"
+  compute_model="$(cfg_get 'compute.model')"
+
+  mkdir -p "$(dirname "$KUBECONFIG_FILE")"
+
+  if [[ "$cloud" == "aws" && "$compute_model" == "eks" ]]; then
+    require_aws
+    local prefix cluster_name region
+    prefix="$(cfg_get 'name_prefix')"
+    cluster_name="${prefix}-cluster"
+    region="$(cfg_get 'region')"
+    [[ -n "$region" ]] || die "region is not set in config/platform.yaml"
+
+    info "Refreshing kubeconfig for EKS cluster '${cluster_name}' in region '${region}'..."
+    aws eks update-kubeconfig \
+      --name "$cluster_name" \
+      --region "$region" \
+      --kubeconfig "$KUBECONFIG_FILE" \
+      --alias "$cluster_name" >/dev/null
+    export KUBECONFIG="$KUBECONFIG_FILE"
+
+    # Ensure current-context points at the expected alias.
+    kubectl --kubeconfig "$KUBECONFIG_FILE" config use-context "$cluster_name" >/dev/null 2>&1 || true
+
+    ok "Wrote kubeconfig to $KUBECONFIG_FILE"
+    cmd_kubeconfig_doctor
+    return
+  fi
+
+  die "kubeconfig refresh is only implemented for cloud=aws + compute.model=eks.
+For this deployment, write kubeconfig manually to:
+  $KUBECONFIG_FILE"
+}
+
+cmd_kubeconfig() {
+  local sub="${1:-}"
+  shift 2>/dev/null || true
+
+  case "$sub" in
+    refresh) cmd_kubeconfig_refresh "$@" ;;
+    doctor)  cmd_kubeconfig_doctor "$@" ;;
+    *)
+      die "Usage: eve-infra kubeconfig <refresh|doctor>"
+      ;;
+  esac
 }
 
 cmd_upgrade() {
@@ -288,9 +430,9 @@ cmd_deploy() {
 
   info "Building manifests with kustomize (overlay: ${overlay})..."
   if command -v kustomize &>/dev/null; then
-    kustomize build "$overlay_dir" | kubectl apply -f - -n "$NAMESPACE"
+    kustomize build "$overlay_dir" | kube apply -f - -n "$NAMESPACE"
   else
-    kubectl apply -k "$overlay_dir" -n "$NAMESPACE"
+    kube apply -k "$overlay_dir" -n "$NAMESPACE"
   fi
 
   echo ""
@@ -303,7 +445,7 @@ cmd_deploy() {
     deployment/eve-gateway \
     statefulset/eve-agent-runtime; do
     echo -n "  ${resource}... "
-    if kubectl rollout status "$resource" -n "$NAMESPACE" --timeout=120s 2>/dev/null; then
+    if kube rollout status "$resource" -n "$NAMESPACE" --timeout=120s 2>/dev/null; then
       echo -e "${GREEN}ready${RESET}"
     else
       echo -e "${RED}timed out${RESET}"
@@ -326,11 +468,11 @@ cmd_secrets_sync() {
 
   info "Syncing secrets from config/secrets.env -> k8s secret 'eve-app' in namespace '${NAMESPACE}'..."
 
-  kubectl create secret generic eve-app \
+  kube create secret generic eve-app \
     --from-env-file="$SECRETS_FILE" \
     --namespace="$NAMESPACE" \
     --dry-run=client -o yaml \
-    | kubectl apply -f -
+    | kube apply -f -
 
   ok "Secret 'eve-app' updated."
   echo ""
@@ -345,7 +487,7 @@ cmd_secrets_show() {
 
   info "Configured keys in secret 'eve-app':"
   echo ""
-  kubectl get secret eve-app -n "$NAMESPACE" -o json 2>/dev/null \
+  kube get secret eve-app -n "$NAMESPACE" -o json 2>/dev/null \
     | jq -r '.data | keys[]' 2>/dev/null \
     | sort \
     || warn "Could not read secret 'eve-app'. It may not exist yet."
@@ -359,9 +501,9 @@ cmd_db_migrate() {
   local job_name="eve-db-migrate"
 
   # Delete previous completed/failed job if it exists (jobs are immutable)
-  if kubectl get job "$job_name" -n "$NAMESPACE" &>/dev/null; then
+  if kube get job "$job_name" -n "$NAMESPACE" &>/dev/null; then
     info "Deleting previous migration job..."
-    kubectl delete job "$job_name" -n "$NAMESPACE" --ignore-not-found
+    kube delete job "$job_name" -n "$NAMESPACE" --ignore-not-found
   fi
 
   local overlay
@@ -374,27 +516,27 @@ cmd_db_migrate() {
     # Build with kustomize to get the overlay-patched job (correct image + DATABASE_URL)
     if command -v kustomize &>/dev/null; then
       kustomize build "$overlay_dir" \
-        | kubectl apply -f - -n "$NAMESPACE" --server-side --field-manager=eve-infra \
+        | kube apply -f - -n "$NAMESPACE" --server-side --field-manager=eve-infra \
         -l app.kubernetes.io/name=eve-db-migrate 2>/dev/null \
-        || kustomize build "$overlay_dir" | kubectl apply -f - -n "$NAMESPACE"
+        || kustomize build "$overlay_dir" | kube apply -f - -n "$NAMESPACE"
     else
-      kubectl apply -k "$overlay_dir" -n "$NAMESPACE"
+      kube apply -k "$overlay_dir" -n "$NAMESPACE"
     fi
   else
-    kubectl apply -f "$REPO_ROOT/k8s/base/db-migrate-job.yaml" -n "$NAMESPACE"
+    kube apply -f "$REPO_ROOT/k8s/base/db-migrate-job.yaml" -n "$NAMESPACE"
   fi
 
   info "Waiting for migration to complete (timeout: 120s)..."
-  if kubectl wait --for=condition=complete "job/$job_name" -n "$NAMESPACE" --timeout=120s 2>/dev/null; then
+  if kube wait --for=condition=complete "job/$job_name" -n "$NAMESPACE" --timeout=120s 2>/dev/null; then
     ok "Migration complete."
     echo ""
     echo "  Logs:"
-    kubectl logs "job/$job_name" -n "$NAMESPACE" --tail=20 2>/dev/null || true
+    kube logs "job/$job_name" -n "$NAMESPACE" --tail=20 2>/dev/null || true
   else
     echo -e "${RED}Migration did not complete within timeout.${RESET}"
     echo ""
     echo "  Check logs:"
-    echo "    kubectl logs job/$job_name -n $NAMESPACE"
+    echo "    kubectl --kubeconfig $KUBECONFIG_FILE -n $NAMESPACE logs job/$job_name"
     exit 1
   fi
 }
@@ -463,7 +605,7 @@ cmd_db_connect() {
   case "$provider" in
     in-cluster)
       info "Connecting to in-cluster PostgreSQL..."
-      kubectl exec -it -n "$NAMESPACE" postgres-0 -- psql -U "$db_user" "$db_name"
+      kube exec -it -n "$NAMESPACE" postgres-0 -- psql -U "$db_user" "$db_name"
       ;;
     rds|cloud-sql|external)
       # Port-forward through the API pod (which has DATABASE_URL) as a SOCKS proxy
@@ -471,7 +613,7 @@ cmd_db_connect() {
       info "Launching psql in a temporary pod (using eve-app secret for DATABASE_URL)..."
       echo -e "${DIM}Press Ctrl+D or type \\q to exit.${RESET}"
       echo ""
-      kubectl run eve-psql-session \
+      kube run eve-psql-session \
         --rm -it \
         --image=postgres:16-alpine \
         --namespace="$NAMESPACE" \
@@ -512,7 +654,7 @@ cmd_logs() {
   shift
 
   info "Tailing logs for ${service} (${label})..."
-  kubectl logs -f -l "$label" -n "$NAMESPACE" --all-containers --prefix "$@"
+  kube logs -f -l "$label" -n "$NAMESPACE" --all-containers --prefix "$@"
 }
 
 cmd_restart() {
@@ -527,10 +669,10 @@ cmd_restart() {
   resource="$(resolve_service "$service")"
 
   info "Rolling restart: ${resource}..."
-  kubectl rollout restart "$resource" -n "$NAMESPACE"
+  kube rollout restart "$resource" -n "$NAMESPACE"
 
   echo -n "  Waiting for rollout... "
-  if kubectl rollout status "$resource" -n "$NAMESPACE" --timeout=120s 2>/dev/null; then
+  if kube rollout status "$resource" -n "$NAMESPACE" --timeout=120s 2>/dev/null; then
     echo -e "${GREEN}ready${RESET}"
   else
     echo -e "${RED}timed out${RESET}"
@@ -875,6 +1017,8 @@ Usage: eve-infra <command> [args]
 Platform:
   status              Show platform version, service health, pod status
   version             Show current + latest available version
+  kubeconfig doctor   Validate config/kubeconfig.yaml and cluster connectivity
+  kubeconfig refresh  Regenerate config/kubeconfig.yaml (aws/eks)
   upgrade <version>   Update platform.yaml, patch overlays for new version
   deploy              Apply current config to cluster (kustomize build | kubectl apply)
   health              Run health check against the API endpoint
@@ -900,12 +1044,18 @@ Operations:
 Services: api, worker, orchestrator, gateway, agent-runtime
 
 Environment:
-  KUBECONFIG          Path to kubeconfig (auto-detected from name_prefix if unset)
+  Canonical kubeconfig:
+                      config/kubeconfig.yaml (required, repo-local)
+  KUBECONFIG          Ignored if set to a different path (safety hardening)
+  EVE_KUBE_GUARD_BYPASS=1
+                      Emergency override to bypass context safety checks
   Config file:        config/platform.yaml (relative to repo root)
   Secrets file:       config/secrets.env (not committed; see secrets.env.example)
 
 Examples:
   eve-infra status
+  eve-infra kubeconfig doctor
+  eve-infra kubeconfig refresh
   eve-infra upgrade 0.2.0
   eve-infra deploy
   eve-infra secrets sync
@@ -932,6 +1082,7 @@ main() {
   case "$command" in
     status)   cmd_status "$@" ;;
     version)  cmd_version "$@" ;;
+    kubeconfig) cmd_kubeconfig "$@" ;;
     upgrade)  cmd_upgrade "$@" ;;
     deploy)   cmd_deploy "$@" ;;
     health)   cmd_health "$@" ;;
