@@ -2,7 +2,7 @@
 
 Infrastructure-as-code template for deploying the [Eve Horizon](https://github.com/eve-horizon) platform. Create a private copy of this repo, fill in your configuration, and deploy a fully working Eve instance to your own cloud account.
 
-**Current cloud support:** AWS (k3s + RDS + Route53) and GCP (GKE + Cloud SQL + Cloud DNS)
+**Current cloud support:** AWS (`compute.model: k3s` or `compute.model: eks`) and GCP (GKE + Cloud SQL + Cloud DNS)
 
 ## Prerequisites
 
@@ -32,6 +32,7 @@ cp config/secrets.env.example config/secrets.env
 CLOUD="$(grep '^cloud:' config/platform.yaml | awk '{print $2}')"
 cp "terraform/${CLOUD}/terraform.tfvars.example" "terraform/${CLOUD}/terraform.tfvars"
 #    Edit terraform.tfvars with values matching platform.yaml
+#    AWS EKS mode: set compute.model=eks and overlay=aws-eks in platform.yaml
 terraform -chdir="terraform/${CLOUD}" init
 terraform -chdir="terraform/${CLOUD}" apply
 
@@ -61,9 +62,10 @@ eve-horizon-infra/
 │   ├── base/                  # Kustomize base manifests (all services)
 │   └── overlays/
 │       ├── aws/               # AWS-specific patches (k3s + RDS wiring)
+│       ├── aws-eks/           # AWS EKS patches (nginx ingress + registry)
 │       └── gcp/               # GCP-specific patches (GKE + Cloud SQL wiring)
 ├── terraform/
-│   ├── aws/                   # AWS root module (EC2/k3s, RDS, Route53)
+│   ├── aws/                   # AWS root module (k3s or EKS, RDS, Route53)
 │   │   ├── providers.tf
 │   │   ├── main.tf
 │   │   ├── variables.tf
@@ -116,6 +118,11 @@ eve-infra restart <service>   # Rolling restart
 ```
 
 Run `bin/eve-infra --help` for the complete reference.
+
+Safety guardrails:
+- `bin/eve-infra` and `scripts/setup.sh` validate kube context before mutating operations.
+- For `cloud: aws` + `compute.model: eks`, context must match `<name_prefix>-cluster`.
+- Emergency override: `EVE_KUBE_GUARD_BYPASS=1` (intended only for explicit break-glass use).
 
 ## Further Reading
 

@@ -49,6 +49,7 @@ Key fields to change:
 |-------|---------|-------|
 | `name_prefix` | `acme-eve-prod` | Unique per deployment in the same cloud account |
 | `cloud` | `aws` or `gcp` | Selects Terraform root + k8s overlay defaults |
+| `compute.model` | `k3s` or `eks` | AWS only. `k3s` keeps single EC2, `eks` uses managed cluster |
 | `region` | `eu-west-1` or `us-central1` | Cloud region for resources |
 | `domain` | `eve.acme.com` | Must be under a managed DNS zone you control |
 | `api_host` | `api.eve.acme.com` | Convention: `api.<domain>` |
@@ -59,6 +60,7 @@ Key fields to change:
 | `tls.email` | `ops@acme.com` | For Let's Encrypt certificate notifications |
 | `ssh_public_key` | `ssh-ed25519 AAAA...` | Contents of your `.pub` file |
 | `compute.type` | `m6i.xlarge` | See comments in the file for sizing guidance |
+| `overlay` | `aws`, `aws-eks`, or `gcp` | Defaults to cloud. Use `aws-eks` with `compute.model: eks` |
 | `database.provider` | `rds` or `cloud-sql` | Managed DB provider should match cloud |
 | `network.allowed_ssh_cidrs` | `["203.0.113.42/32"]` | Restrict to your IP |
 
@@ -116,6 +118,9 @@ Fill in values that match your `platform.yaml`. The key fields to set:
 - `ssh_public_key` -- same key as `platform.yaml`
 - `db_password` -- generate a strong password
 - `allowed_ssh_cidrs` -- restrict to your IP
+- if `compute_model = "eks"`:
+  - set EKS node group sizing (`eks_default_*`, `eks_agents_*`, `eks_apps_*`)
+  - after ingress is provisioned, set `ingress_lb_dns_name` + `ingress_lb_zone_id` for Route53 alias records
 
 Then provision:
 
@@ -172,7 +177,7 @@ bin/eve-infra db migrate
 bin/eve-infra health
 ```
 
-The deploy command builds kustomize manifests from `k8s/overlays/<cloud>/` and applies them to the cluster, then waits for all rollouts to complete.
+The deploy command builds manifests from `k8s/overlays/<overlay>/` (`overlay` from `config/platform.yaml`, falling back to `cloud`) and applies them to the cluster, then waits for rollouts to complete.
 
 ### 8. Verify
 
@@ -317,11 +322,16 @@ Deploys Eve to the cluster. Triggered by:
 
 Required GitHub secrets:
 - `KUBECONFIG` -- required for direct kubeconfig mode (AWS/custom overlays)
+- `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` -- required for AWS EKS deploy mode
 - `GCP_SA_KEY`, `GCP_PROJECT_ID`, `GKE_CLUSTER_NAME`, `GKE_ZONE` -- required for GCP deploys
 - `REGISTRY_TOKEN` -- GitHub PAT with `read:packages` scope
 - `SLACK_WEBHOOK_URL` -- (optional) for deploy notifications
 
 The workflow runs migrations, applies manifests, waits for rollouts, runs a health check, and auto-rolls-back on failure.
+
+Local safety guardrails:
+- `bin/eve-infra` and `scripts/setup.sh` now validate active kube context before mutating operations.
+- Use `EVE_KUBE_GUARD_BYPASS=1` only for intentional break-glass operations.
 
 ### Health Check Workflow (`.github/workflows/health-check.yml`)
 
@@ -445,7 +455,7 @@ Common causes:
 2. Check the server is reachable: `curl -sk https://<server-ip>:443`
 3. Check the API pod is running: `kubectl get pods -n eve -l app.kubernetes.io/name=eve-api`
 4. Check the ingress: `kubectl get ingress -n eve`
-5. Check ingress controller logs (`traefik` on k3s, `ingress-nginx` on GKE):
+5. Check ingress controller logs (`traefik` on k3s, `ingress-nginx` on GKE/AWS EKS):
    `kubectl logs -n kube-system -l app.kubernetes.io/name=traefik`
    `kubectl logs -n ingress-nginx -l app.kubernetes.io/name=ingress-nginx`
 

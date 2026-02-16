@@ -5,7 +5,7 @@
 #
 # Reads config from config/platform.yaml (relative to repo root).
 # Targets the Kubernetes namespace "eve" on the cluster identified by
-# KUBECONFIG or ~/.kube/eve-<name_prefix>.yaml.
+# KUBECONFIG, config/kubeconfig.yaml, or validated cloud-native kube contexts.
 #
 # Usage: eve-infra <command> [args]
 # Run eve-infra --help for the full command list.
@@ -71,7 +71,7 @@ cfg_get() {
   echo "$raw"
 }
 
-# Resolve KUBECONFIG: env var > config/kubeconfig.yaml > ~/.kube/eve-<prefix>.yaml > default
+# Resolve KUBECONFIG: env var > config/kubeconfig.yaml > cloud defaults > ~/.kube/eve-<prefix>.yaml
 resolve_kubeconfig() {
   if [[ -n "${KUBECONFIG:-}" ]]; then
     return
@@ -82,6 +82,17 @@ resolve_kubeconfig() {
     export KUBECONFIG="$local_kube"
     return
   fi
+  local cloud
+  cloud="$(cfg_get 'cloud')"
+  local compute_model
+  compute_model="$(cfg_get 'compute.model')"
+  # Cloud-managed control planes should use default kubeconfig.
+  if [[ "$cloud" == "gcp" ]]; then
+    return
+  fi
+  if [[ "$cloud" == "aws" && "$compute_model" == "eks" ]]; then
+    return
+  fi
   local prefix
   prefix="$(cfg_get name_prefix)"
   local candidate="$HOME/.kube/eve-${prefix}.yaml"
@@ -89,13 +100,10 @@ resolve_kubeconfig() {
     export KUBECONFIG="$candidate"
     return
   fi
-  # GKE: kubeconfig is managed by gcloud, use default ~/.kube/config
-  local cloud
-  cloud="$(cfg_get 'cloud')"
-  if [[ "$cloud" == "gcp" ]] && command -v gcloud &>/dev/null; then
-    return
-  fi
-  # else: fall through to kubectl's default (~/.kube/config)
+
+  die "No kubeconfig found for this repo.
+Set KUBECONFIG or create config/kubeconfig.yaml.
+Refusing to fall through to the implicit default kube context."
 }
 
 require_kubectl() {
@@ -104,6 +112,52 @@ require_kubectl() {
 
 require_config() {
   [[ -f "$CONFIG_FILE" ]] || die "Config not found at $CONFIG_FILE"
+}
+
+current_kube_context() {
+  kubectl config current-context 2>/dev/null || true
+}
+
+assert_safe_kube_context() {
+  local intent="${1:-read}"
+
+  if [[ "${EVE_KUBE_GUARD_BYPASS:-0}" == "1" ]]; then
+    warn "Bypassing kube context guard for ${intent} operations (EVE_KUBE_GUARD_BYPASS=1)."
+    return
+  fi
+
+  local cloud compute_model prefix ctx expected_cluster
+  cloud="$(cfg_get 'cloud')"
+  compute_model="$(cfg_get 'compute.model')"
+  prefix="$(cfg_get 'name_prefix')"
+  ctx="$(current_kube_context)"
+
+  [[ -n "$ctx" ]] || die "kubectl has no current context. Configure kube access before running eve-infra."
+
+  expected_cluster="${prefix}-cluster"
+
+  # AWS EKS: enforce explicit cluster match.
+  if [[ "$cloud" == "aws" && "$compute_model" == "eks" ]]; then
+    if [[ "$ctx" != *":cluster/${expected_cluster}" && "$ctx" != "$expected_cluster" ]]; then
+      die "Unsafe kube context '$ctx' for aws/eks. Expected context for '${expected_cluster}'.
+Switch context first or intentionally override with EVE_KUBE_GUARD_BYPASS=1."
+    fi
+    return
+  fi
+
+  # GCP and k3s/aws local paths: block obvious EKS contexts.
+  if [[ "$ctx" == arn:aws:eks:* || "$ctx" == *":cluster/"* ]]; then
+    die "Unsafe kube context '$ctx' for cloud='$cloud' compute.model='${compute_model:-unset}'.
+Switch context first or intentionally override with EVE_KUBE_GUARD_BYPASS=1."
+  fi
+}
+
+require_cluster_access() {
+  local intent="${1:-read}"
+  require_config
+  require_kubectl
+  resolve_kubeconfig
+  assert_safe_kube_context "$intent"
 }
 
 # Map user-friendly service names to k8s resource names.
@@ -146,9 +200,7 @@ resolve_label() {
 # ---------------------------------------------------------------------------
 
 cmd_status() {
-  require_config
-  require_kubectl
-  resolve_kubeconfig
+  require_cluster_access read
 
   local version name_prefix env cloud
   version="$(cfg_get 'platform.version')"
@@ -166,6 +218,9 @@ cmd_status() {
   echo -e "  Name prefix: ${name_prefix}"
   echo -e "  API host:    ${api_host}"
   echo -e "  Namespace:   ${NAMESPACE}"
+  local kube_ctx
+  kube_ctx="$(current_kube_context)"
+  [[ -n "$kube_ctx" ]] && echo -e "  Context:     ${DIM}${kube_ctx}${RESET}"
   if [[ -n "${KUBECONFIG:-}" ]]; then
     echo -e "  Kubeconfig:  ${DIM}${KUBECONFIG}${RESET}"
   fi
@@ -275,9 +330,7 @@ cmd_upgrade() {
 }
 
 cmd_deploy() {
-  require_config
-  require_kubectl
-  resolve_kubeconfig
+  require_cluster_access write
 
   local overlay
   overlay="$(cfg_get 'overlay')"
@@ -315,8 +368,7 @@ cmd_deploy() {
 }
 
 cmd_secrets_sync() {
-  require_kubectl
-  resolve_kubeconfig
+  require_cluster_access write
 
   if [[ ! -f "$SECRETS_FILE" ]]; then
     die "Secrets file not found at ${SECRETS_FILE}.
@@ -340,8 +392,7 @@ cmd_secrets_sync() {
 }
 
 cmd_secrets_show() {
-  require_kubectl
-  resolve_kubeconfig
+  require_cluster_access read
 
   info "Configured keys in secret 'eve-app':"
   echo ""
@@ -352,9 +403,7 @@ cmd_secrets_show() {
 }
 
 cmd_db_migrate() {
-  require_config
-  require_kubectl
-  resolve_kubeconfig
+  require_cluster_access write
 
   local job_name="eve-db-migrate"
 
@@ -447,9 +496,7 @@ cmd_db_backup() {
 }
 
 cmd_db_connect() {
-  require_config
-  require_kubectl
-  resolve_kubeconfig
+  require_cluster_access write
 
   local provider
   provider="$(cfg_get 'database.provider')"
@@ -504,8 +551,7 @@ cmd_logs() {
   [[ -n "$service" ]] || die "Usage: eve-infra logs <service>
   Services: $VALID_SERVICES"
 
-  require_kubectl
-  resolve_kubeconfig
+  require_cluster_access read
 
   local label
   label="$(resolve_label "$service")"
@@ -520,8 +566,7 @@ cmd_restart() {
   [[ -n "$service" ]] || die "Usage: eve-infra restart <service>
   Services: $VALID_SERVICES"
 
-  require_kubectl
-  resolve_kubeconfig
+  require_cluster_access write
 
   local resource
   resource="$(resolve_service "$service")"
@@ -900,7 +945,9 @@ Operations:
 Services: api, worker, orchestrator, gateway, agent-runtime
 
 Environment:
-  KUBECONFIG          Path to kubeconfig (auto-detected from name_prefix if unset)
+  KUBECONFIG          Path to kubeconfig (required for non-managed clusters)
+  EVE_KUBE_GUARD_BYPASS=1
+                      Emergency override to bypass context safety checks
   Config file:        config/platform.yaml (relative to repo root)
   Secrets file:       config/secrets.env (not committed; see secrets.env.example)
 
