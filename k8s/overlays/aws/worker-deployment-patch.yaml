@@ -6,17 +6,15 @@ metadata:
 spec:
   template:
     spec:
-      imagePullSecrets:
-        - name: eve-registry
       containers:
         - name: worker
-          image: ghcr.io/eve-horizon/worker:latest
+          image: public.ecr.aws/w7c4v0w3/eve-horizon/worker:latest
           imagePullPolicy: IfNotPresent
           env:
             - name: DATABASE_URL
               value: postgres://eve:REPLACE_ME@db.example.com:5432/eve
             - name: EVE_RUNNER_IMAGE
-              value: ghcr.io/eve-horizon/worker-full:latest
+              value: public.ecr.aws/w7c4v0w3/eve-horizon/worker-full:latest
             - name: EVE_DEFAULT_DOMAIN
               value: apps.example.com
             - name: EVE_COMPUTE_MODEL

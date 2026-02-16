@@ -6,11 +6,9 @@ metadata:
 spec:
   template:
     spec:
-      imagePullSecrets:
-        - name: eve-registry
       containers:
         - name: agent-runtime
-          image: ghcr.io/eve-horizon/agent-runtime:staging
+          image: public.ecr.aws/w7c4v0w3/eve-horizon/agent-runtime:staging
       # Schedule onto agents spot pool
       tolerations:
         - key: pool

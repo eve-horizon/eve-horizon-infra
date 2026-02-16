@@ -7,7 +7,8 @@
 # version in config/platform.yaml.
 #
 # Secrets required:
-#   REGISTRY_TOKEN - GitHub token with packages:read for ghcr.io/eve-horizon
+#   REGISTRY_TOKEN - GitHub token with packages:read (required only for GHCR registries)
+#   AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY - required when platform.registry points to private ECR
 # =============================================================================
 
 name: Upgrade Check
@@ -47,6 +48,15 @@ jobs:
           CONFIG=config/platform.yaml
           echo "current_version=$(yq '.platform.version' $CONFIG)" >> $GITHUB_OUTPUT
           echo "registry=$(yq '.platform.registry' $CONFIG)"       >> $GITHUB_OUTPUT
+          echo "region=$(yq '.region' $CONFIG)"                    >> $GITHUB_OUTPUT
+
+      - name: Configure AWS credentials for ECR registry queries
+        if: contains(steps.config.outputs.registry, '.dkr.ecr.')
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ steps.config.outputs.region }}
 
       # -----------------------------------------------------------------------
       # Query registry for latest version tag
@@ -57,32 +67,65 @@ jobs:
           REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
           REGISTRY: ${{ steps.config.outputs.registry }}
           CURRENT: ${{ steps.config.outputs.current_version }}
+          REGION: ${{ steps.config.outputs.region }}
         run: |
-          # Use the GitHub Container Registry API to list tags for the api image.
-          # We look at the api image as the canonical version reference.
-          #
-          # The GHCR API returns tags via the OCI distribution spec.
-          # We filter for semver-like tags (digits and dots only) and sort them.
-
           echo "Current version: ${CURRENT}"
           echo "Registry: ${REGISTRY}"
 
-          # Extract org/image from registry path (e.g. ghcr.io/eve-horizon → eve-horizon)
-          ORG_IMAGE="${REGISTRY#ghcr.io/}"
+          REGISTRY_HOST="${REGISTRY%%/*}"
+          REGISTRY_PATH="${REGISTRY#*/}"
+          TAGS=""
 
-          # List tags from GHCR using the packages API
-          TAGS=$(curl -sL \
-            -H "Authorization: Bearer $(echo -n "$REGISTRY_TOKEN" | base64 -w0 2>/dev/null || echo -n "$REGISTRY_TOKEN" | base64)" \
-            "https://ghcr.io/v2/${ORG_IMAGE}/api/tags/list" 2>/dev/null \
-            | jq -r '.tags[]? // empty' 2>/dev/null || echo "")
+          if [[ "$REGISTRY_HOST" == "ghcr.io" ]]; then
+            ORG_IMAGE="${REGISTRY_PATH}"
+            TAGS=$(curl -sL \
+              -H "Authorization: Bearer $(echo -n "$REGISTRY_TOKEN" | base64 -w0 2>/dev/null || echo -n "$REGISTRY_TOKEN" | base64)" \
+              "https://ghcr.io/v2/${ORG_IMAGE}/api/tags/list" 2>/dev/null \
+              | jq -r '.tags[]? // empty' 2>/dev/null || echo "")
 
-          if [[ -z "$TAGS" ]]; then
-            # Fallback: try using gh CLI with the packages API
-            echo "OCI tag list empty, trying GitHub packages API..."
-            TAGS=$(gh api \
-              -H "Accept: application/vnd.github+json" \
-              "/orgs/${ORG_IMAGE}/packages/container/api/versions" \
-              --jq '.[].metadata.container.tags[]' 2>/dev/null || echo "")
+            if [[ -z "$TAGS" ]]; then
+              ORG="${ORG_IMAGE%%/*}"
+              TAGS=$(gh api \
+                -H "Accept: application/vnd.github+json" \
+                "/orgs/${ORG}/packages/container/api/versions" \
+                --jq '.[].metadata.container.tags[]' 2>/dev/null || echo "")
+            fi
+          elif [[ "$REGISTRY_HOST" == *.dkr.ecr.*.amazonaws.com ]]; then
+            API_REPOSITORY="${REGISTRY_PATH}/api"
+            TAGS=$(aws ecr describe-images \
+              --repository-name "$API_REPOSITORY" \
+              --query 'imageDetails[].imageTags[]' \
+              --output text 2>/dev/null \
+              | tr '\t' '\n' \
+              | tr ' ' '\n' \
+              | sed '/^None$/d' \
+              || echo "")
+          elif [[ "$REGISTRY_HOST" == "public.ecr.aws" ]]; then
+            REGISTRY_ALIAS="${REGISTRY_PATH%%/*}"
+            REGISTRY_NAMESPACE="${REGISTRY_PATH#*/}"
+            if [[ -z "$REGISTRY_ALIAS" || -z "$REGISTRY_NAMESPACE" || "$REGISTRY_NAMESPACE" == "$REGISTRY_PATH" ]]; then
+              echo "Invalid ECR Public registry path: ${REGISTRY_PATH}"
+              echo "expected: public.ecr.aws/<alias>/<namespace>"
+              echo "available=false" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+            API_REPOSITORY="${REGISTRY_NAMESPACE}/api"
+            TOKEN=$(curl -sL \
+              "https://public.ecr.aws/token/?service=public.ecr.aws&scope=repository:${API_REPOSITORY}:pull" 2>/dev/null \
+              | jq -r '.token // empty' 2>/dev/null || echo "")
+            if [[ -z "$TOKEN" ]]; then
+              echo "Could not retrieve anonymous token for public ECR"
+              echo "available=false" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+            TAGS=$(curl -sL \
+              -H "Authorization: Bearer ${TOKEN}" \
+              "https://public.ecr.aws/v2/${REGISTRY_ALIAS}/${API_REPOSITORY}/tags/list" 2>/dev/null \
+              | jq -r '.tags[]? // empty' 2>/dev/null || echo "")
+          else
+            echo "Unsupported registry host: ${REGISTRY_HOST}"
+            echo "available=false" >> $GITHUB_OUTPUT
+            exit 0
           fi
 
           if [[ -z "$TAGS" ]]; then
@@ -95,7 +138,7 @@ jobs:
           LATEST=$(echo "$TAGS" \
             | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
             | sort -t. -k1,1n -k2,2n -k3,3n \
-            | tail -n1)
+            | tail -n1 || true)
 
           if [[ -z "$LATEST" ]]; then
             echo "No semver tags found in registry"

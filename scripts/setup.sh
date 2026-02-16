@@ -29,10 +29,15 @@ CONFIG_FILE="$REPO_ROOT/config/platform.yaml"
 # Read cloud provider from platform.yaml
 CLOUD="$(sed -n 's/^cloud: *//p' "$CONFIG_FILE" | head -1 | tr -d '"' | tr -d "'")"
 CLOUD="${CLOUD:-aws}"
+REGION="$(sed -n 's/^region: *//p' "$CONFIG_FILE" | head -1 | tr -d '"' | tr -d "'")"
+REGION="${REGION:-us-west-2}"
 COMPUTE_MODEL="$(sed -n '/^compute:/,/^[^ ]/{s/^  model: *//p;}' "$CONFIG_FILE" | head -1 | sed 's/[[:space:]]*#.*$//' | tr -d '"' | tr -d "'" | xargs)"
 COMPUTE_MODEL="${COMPUTE_MODEL:-k3s}"
 NAME_PREFIX="$(sed -n 's/^name_prefix: *//p' "$CONFIG_FILE" | head -1 | sed 's/[[:space:]]*#.*$//' | tr -d '"' | tr -d "'" | xargs)"
 NAME_PREFIX="${NAME_PREFIX:-eve}"
+REGISTRY="$(sed -n '/^platform:/,/^[^ ]/{s/^  registry: *//p;}' "$CONFIG_FILE" | head -1 | sed 's/[[:space:]]*#.*$//' | tr -d '"' | tr -d "'" | xargs)"
+REGISTRY="${REGISTRY:-public.ecr.aws/w7c4v0w3/eve-horizon}"
+REGISTRY_HOST="${REGISTRY%%/*}"
 
 # Colors
 if [[ -t 1 ]]; then
@@ -211,33 +216,46 @@ EOF
 ok "ClusterIssuers created."
 
 # -------------------------------------------------------------------------
-# 4. Create container registry pull secret
+# 4. Create container registry pull secret (if required)
 # -------------------------------------------------------------------------
-info "Creating registry pull secret..."
+info "Configuring registry pull secret for '${REGISTRY}'..."
 
-if [[ -f "$SECRETS_FILE" ]]; then
-  # Source secrets to get GHCR credentials
+if [[ "$REGISTRY_HOST" == "public.ecr.aws" ]]; then
+  ok "Registry '${REGISTRY}' is public. Skipping eve-registry pull secret."
+elif [[ -f "$SECRETS_FILE" ]]; then
   # shellcheck disable=SC1090
   set +u
   source "$SECRETS_FILE"
   set -u
 
-  if [[ -n "${GHCR_USERNAME:-}" && -n "${GHCR_TOKEN:-}" ]]; then
+  REGISTRY_USER="${REGISTRY_USERNAME:-}"
+  REGISTRY_PASS="${REGISTRY_PASSWORD:-}"
+
+  if [[ "$REGISTRY_HOST" == "ghcr.io" ]]; then
+    REGISTRY_USER="${REGISTRY_USER:-${GHCR_USERNAME:-}}"
+    REGISTRY_PASS="${REGISTRY_PASS:-${GHCR_TOKEN:-}}"
+  elif [[ "$REGISTRY_HOST" == *.dkr.ecr.*.amazonaws.com ]]; then
+    # Allow explicit credentials override, otherwise derive an auth token from
+    # local AWS credentials for private ECR registries.
+    if [[ -z "$REGISTRY_USER" || -z "$REGISTRY_PASS" ]] && command -v aws &>/dev/null; then
+      REGISTRY_USER="AWS"
+      REGISTRY_PASS="$(aws ecr get-login-password --region "$REGION" 2>/dev/null || true)"
+    fi
+  fi
+
+  if [[ -n "$REGISTRY_USER" && -n "$REGISTRY_PASS" ]]; then
     kubectl create secret docker-registry eve-registry \
-      --docker-server=ghcr.io \
-      --docker-username="$GHCR_USERNAME" \
-      --docker-password="$GHCR_TOKEN" \
+      --docker-server="$REGISTRY_HOST" \
+      --docker-username="$REGISTRY_USER" \
+      --docker-password="$REGISTRY_PASS" \
       --namespace="$NAMESPACE" \
       --dry-run=client -o yaml | kubectl apply -f -
-    ok "Registry secret 'eve-registry' created."
+    ok "Registry secret 'eve-registry' created for ${REGISTRY_HOST}."
   else
-    warn "GHCR_USERNAME or GHCR_TOKEN not set in secrets.env. Skipping registry secret."
-    echo "  Create it manually:"
-    echo "    kubectl create secret docker-registry eve-registry \\"
-    echo "      --docker-server=ghcr.io \\"
-    echo "      --docker-username=<your-username> \\"
-    echo "      --docker-password=<your-token> \\"
-    echo "      -n $NAMESPACE"
+    warn "No pull credentials resolved for registry '${REGISTRY_HOST}'. Skipping eve-registry secret."
+    echo "  For private registries, set one of the following in config/secrets.env:"
+    echo "    - REGISTRY_USERNAME + REGISTRY_PASSWORD (generic)"
+    echo "    - GHCR_USERNAME + GHCR_TOKEN (for ghcr.io)"
   fi
 else
   warn "config/secrets.env not found. Skipping registry secret."

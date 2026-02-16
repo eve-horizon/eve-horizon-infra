@@ -253,33 +253,79 @@ cmd_version() {
   echo -e "${BOLD}Registry:${RESET}        ${registry}"
   echo ""
 
-  # Attempt to query ghcr.io for the latest tag.
-  # This uses the OCI distribution API and requires no authentication for
-  # public packages, but will gracefully degrade if unavailable.
-  if command -v curl &>/dev/null; then
-    info "Checking for latest version at ${registry}..."
-    local tags_url="https://ghcr.io/v2/eve-horizon/api/tags/list"
-    local response
-    response="$(curl -sf "$tags_url" 2>/dev/null || true)"
-    if [[ -n "$response" ]] && command -v jq &>/dev/null; then
-      local latest
-      latest="$(echo "$response" | jq -r '.tags[]' 2>/dev/null \
-        | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
-        | sort -V | tail -1)"
-      if [[ -n "$latest" ]]; then
-        if [[ "$latest" == "$version" ]]; then
-          ok "You are on the latest version."
-        else
-          echo -e "${YELLOW}Latest available:${RESET} ${latest}"
-          echo "  Run: eve-infra upgrade $latest"
-        fi
-      else
-        echo -e "${DIM}Could not determine latest version from registry.${RESET}"
+  info "Checking for latest version at ${registry}..."
+  local registry_host registry_path tags latest response
+  registry_host="${registry%%/*}"
+  registry_path="${registry#*/}"
+  tags=""
+
+  case "$registry_host" in
+    ghcr.io)
+      if ! command -v curl &>/dev/null || ! command -v jq &>/dev/null; then
+        warn "curl + jq are required to query GHCR tags."
+        return
       fi
-    else
-      echo -e "${DIM}Could not query registry (curl/jq unavailable or registry unreachable).${RESET}"
-      echo "  Check manually: https://github.com/orgs/eve-horizon/packages"
-    fi
+      response="$(curl -sfL "https://ghcr.io/v2/${registry_path}/api/tags/list" 2>/dev/null || true)"
+      tags="$(echo "$response" | jq -r '.tags[]? // empty' 2>/dev/null || true)"
+      ;;
+    public.ecr.aws)
+      if ! command -v curl &>/dev/null || ! command -v jq &>/dev/null; then
+        warn "curl + jq are required to query public ECR tags."
+        return
+      fi
+      local registry_alias registry_namespace repository token tags_json
+      registry_alias="${registry_path%%/*}"
+      registry_namespace="${registry_path#*/}"
+      if [[ -z "$registry_alias" || -z "$registry_namespace" || "$registry_namespace" == "$registry_path" ]]; then
+        warn "Invalid public ECR registry path '${registry}'. Expected public.ecr.aws/<alias>/<namespace>."
+        return
+      fi
+      repository="${registry_namespace}/api"
+      token="$(curl -sfL "https://public.ecr.aws/token/?service=public.ecr.aws&scope=repository:${repository}:pull" \
+        | jq -r '.token // empty' 2>/dev/null || true)"
+      [[ -n "$token" ]] || return
+      tags_json="$(curl -sfL -H "Authorization: Bearer ${token}" \
+        "https://public.ecr.aws/v2/${registry_alias}/${repository}/tags/list" 2>/dev/null || true)"
+      tags="$(echo "$tags_json" | jq -r '.tags[]? // empty' 2>/dev/null || true)"
+      ;;
+    *.dkr.ecr.*.amazonaws.com)
+      if ! command -v aws &>/dev/null; then
+        warn "aws CLI is required to query private ECR tags."
+        return
+      fi
+      local region
+      region="$(cfg_get 'region')"
+      region="${region:-us-east-1}"
+      tags="$(aws ecr describe-images \
+        --repository-name "${registry_path}/api" \
+        --region "$region" \
+        --query 'imageDetails[].imageTags[]' \
+        --output text 2>/dev/null \
+        | tr '\t' '\n' \
+        | tr ' ' '\n' \
+        | sed '/^None$/d;/^$/d' \
+        || true)"
+      ;;
+    *)
+      warn "Unsupported registry host '${registry_host}'."
+      return
+      ;;
+  esac
+
+  latest="$(echo "$tags" \
+    | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
+    | sort -V | tail -1 || true)"
+
+  if [[ -z "$latest" ]]; then
+    echo -e "${DIM}Could not determine latest version from registry.${RESET}"
+    return
+  fi
+
+  if [[ "$latest" == "$version" ]]; then
+    ok "You are on the latest version."
+  else
+    echo -e "${YELLOW}Latest available:${RESET} ${latest}"
+    echo "  Run: eve-infra upgrade $latest"
   fi
 }
 
@@ -394,11 +440,12 @@ cmd_upgrade() {
     local patch_file
     for patch_file in "$overlay_dir"/*-patch.yaml; do
       [[ -f "$patch_file" ]] || continue
-      # Replace registry/image:old_version or :latest with :new_version
-      sed -i.bak \
-        -e "s|image: *${registry}/\([^:]*\):${old_version}|image: ${registry}/\1:${new_version}|g" \
-        -e "s|image: *${registry}/\([^:]*\):latest|image: ${registry}/\1:${new_version}|g" \
-        "$patch_file"
+      # Normalize service image host + tag to configured registry and target version.
+      local service
+      for service in api gateway orchestrator worker agent-runtime sso; do
+        perl -0pi -e "s|image:\\s*[^\\s\"']*/${service}:[^\\s\"']+|image: ${registry}/${service}:${new_version}|g" "$patch_file"
+      done
+      perl -0pi -e "s|value:\\s*\"?[^\"\\s]*/worker(-full)?:[^\"\\s]+\"?|value: \"${registry}/worker\\1:${new_version}\"|g" "$patch_file"
       rm -f "$patch_file.bak"
     done
   else

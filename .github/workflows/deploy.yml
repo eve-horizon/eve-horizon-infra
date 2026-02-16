@@ -12,7 +12,8 @@
 #
 # Secrets required:
 #   KUBECONFIG       - Base64-encoded kubeconfig for the target cluster
-#   REGISTRY_TOKEN   - GitHub token with packages:read for ghcr.io/eve-horizon
+#   REGISTRY_TOKEN   - GitHub token with packages:read (required only for GHCR registries)
+#   AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY - required only for private ECR registries
 #   SLACK_WEBHOOK_URL - (optional) Slack incoming webhook for notifications
 # =============================================================================
 
@@ -79,6 +80,7 @@ jobs:
           echo "domain=$(yq '.domain' "$CONFIG")"              >> $GITHUB_OUTPUT
           echo "environment=$(yq '.environment' "$CONFIG")"    >> $GITHUB_OUTPUT
           echo "name_prefix=$(yq '.name_prefix' "$CONFIG")"    >> $GITHUB_OUTPUT
+          echo "region=$(yq '.region' "$CONFIG")"              >> $GITHUB_OUTPUT
 
       # -----------------------------------------------------------------------
       # Resolve effective version
@@ -154,12 +156,25 @@ jobs:
       # -----------------------------------------------------------------------
       # Login to container registry
       # -----------------------------------------------------------------------
+      - name: Configure AWS credentials for ECR login
+        if: contains(steps.config.outputs.registry, '.dkr.ecr.')
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ steps.config.outputs.region }}
+
       - name: Login to GHCR
+        if: startsWith(steps.config.outputs.registry, 'ghcr.io/')
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.REGISTRY_TOKEN }}
+
+      - name: Login to Amazon ECR
+        if: contains(steps.config.outputs.registry, '.dkr.ecr.')
+        uses: aws-actions/amazon-ecr-login@v2
 
       # -----------------------------------------------------------------------
       # Update image tags in overlay patches
@@ -173,13 +188,25 @@ jobs:
           OVERLAY_DIR="k8s/overlays/${OVERLAY}"
           echo "Updating image tags in ${OVERLAY_DIR} to version ${VERSION}"
 
-          # Update all service image tags in patch files
+          shopt -s nullglob
+          PATCH_FILES=("${OVERLAY_DIR}"/*-patch.yaml)
+          if [[ ${#PATCH_FILES[@]} -eq 0 ]]; then
+            echo "No patch files found under ${OVERLAY_DIR}"
+            exit 1
+          fi
+
+          # Normalize service image references to the configured registry + version
+          # regardless of the previous host (GHCR, ECR Public, private ECR, etc).
           for SERVICE in api gateway orchestrator worker agent-runtime; do
-            sed -i "s|${REGISTRY}/${SERVICE}:[^ \"]*|${REGISTRY}/${SERVICE}:${VERSION}|g" ${OVERLAY_DIR}/*-patch.yaml
+            for PATCH_FILE in "${PATCH_FILES[@]}"; do
+              perl -0pi -e "s|image:\\s*[^\\s\"']*/${SERVICE}:[^\\s\"']+|image: ${REGISTRY}/${SERVICE}:${VERSION}|g" "$PATCH_FILE"
+            done
           done
 
-          # Also update the EVE_RUNNER_IMAGE env var in worker patch
-          sed -i "s|${REGISTRY}/worker-full:[^ \"]*|${REGISTRY}/worker-full:${VERSION}|g" ${OVERLAY_DIR}/*-patch.yaml
+          # Normalize EVE_RUNNER_IMAGE if present (supports worker and worker-full variants).
+          for PATCH_FILE in "${PATCH_FILES[@]}"; do
+            perl -0pi -e "s|value:\\s*\"?[^\"\\s]*/worker(-full)?:[^\"\\s]+\"?|value: \"${REGISTRY}/worker\\1:${VERSION}\"|g" "$PATCH_FILE"
+          done
 
           echo "=== Updated patch files ==="
           grep -rn "image:" ${OVERLAY_DIR}/ || true

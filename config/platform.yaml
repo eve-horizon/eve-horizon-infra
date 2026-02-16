@@ -22,8 +22,8 @@ platform:
   version: "0.1.28"
 
   # Container image registry. All Eve images live under this namespace.
-  # Default points to the public Eve Horizon registry on GitHub Packages.
-  registry: "ghcr.io/eve-horizon"      # [OPTIONAL] Override for private mirrors
+  # Default points to the public ECR mirror for anonymous pulls.
+  registry: "public.ecr.aws/w7c4v0w3/eve-horizon"      # [OPTIONAL] Override for GHCR/private mirrors
 
 # -----------------------------------------------------------------------------
 # Environment

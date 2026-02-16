@@ -91,7 +91,7 @@ Set at minimum:
 
 - `EVE_SECRETS_MASTER_KEY`, `EVE_INTERNAL_API_KEY`, `EVE_BOOTSTRAP_TOKEN`
 - `DATABASE_URL` -- constructed from Terraform output after provisioning (see step 4)
-- `GHCR_USERNAME` + `GHCR_TOKEN` -- GitHub PAT with `read:packages` scope
+- Registry pull credentials only if using a private registry (for example `GHCR_USERNAME` + `GHCR_TOKEN`)
 - `ANTHROPIC_API_KEY` and/or `OPENAI_API_KEY` -- at least one LLM provider
 - `GITHUB_TOKEN` -- PAT with `repo`, `read:org` scopes
 
@@ -318,7 +318,8 @@ Deploys Eve to the cluster. Triggered by:
 Required GitHub secrets:
 - `KUBECONFIG` -- required for direct kubeconfig mode (AWS/custom overlays)
 - `GCP_SA_KEY`, `GCP_PROJECT_ID`, `GKE_CLUSTER_NAME`, `GKE_ZONE` -- required for GCP deploys
-- `REGISTRY_TOKEN` -- GitHub PAT with `read:packages` scope
+- `REGISTRY_TOKEN` -- required only when `platform.registry` uses `ghcr.io/*`
+- `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` -- required only when `platform.registry` uses private ECR
 - `SLACK_WEBHOOK_URL` -- (optional) for deploy notifications
 
 The workflow runs migrations, applies manifests, waits for rollouts, runs a health check, and auto-rolls-back on failure.
@@ -334,7 +335,8 @@ Runs every 30 minutes. Hits `https://<api_host>/health` with 3 retries. On failu
 Runs daily at 08:00 UTC. Queries the container registry for the latest semver tag. If a newer version is available, opens a PR that bumps `config/platform.yaml`. Avoids duplicate PRs.
 
 Required GitHub secrets:
-- `REGISTRY_TOKEN` -- GitHub PAT with `read:packages` scope
+- `REGISTRY_TOKEN` -- required only when `platform.registry` uses `ghcr.io/*`
+- `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` -- required only when `platform.registry` uses private ECR
 
 ---
 
@@ -373,13 +375,27 @@ If `observability.otel_enabled` is set to `true` in `platform.yaml`, all Eve ser
 
 ### Pods stuck in ImagePullBackOff
 
-The cluster cannot pull images from `ghcr.io/eve-horizon`.
+The cluster cannot pull images from the configured `platform.registry`.
 
 ```bash
-# Check the registry secret exists
+# Check what registry is configured
+yq '.platform.registry' config/platform.yaml
+
+# Check for recent pull/auth errors
+kubectl get events -n eve --sort-by=.lastTimestamp | tail -50
+
+# Check whether an imagePullSecret is still configured on workloads
+kubectl -n eve get deploy,statefulset -o yaml | rg -n "imagePullSecrets|eve-registry"
+```
+
+If `platform.registry` is public ECR (`public.ecr.aws/...`), no pull secret is required.
+
+If you're using a private registry (GHCR/private ECR/custom), ensure the pull secret exists:
+
+```bash
 kubectl get secret eve-registry -n eve
 
-# If missing, re-run setup or create manually
+# If missing, re-run setup or create manually (example for GHCR)
 kubectl create secret docker-registry eve-registry \
   --docker-server=ghcr.io \
   --docker-username=<your-username> \
@@ -387,7 +403,7 @@ kubectl create secret docker-registry eve-registry \
   -n eve
 ```
 
-Verify your `GHCR_TOKEN` has `read:packages` scope and has not expired.
+For GHCR, verify `GHCR_TOKEN` has `read:packages` scope and has not expired.
 
 ### Pods stuck in CrashLoopBackOff
 

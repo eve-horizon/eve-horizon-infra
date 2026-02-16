@@ -25,7 +25,7 @@ gh repo create my-org/eve-infra --template eve-horizon/eve-horizon-infra --priva
 # 2. Configure
 cp config/secrets.env.example config/secrets.env
 #    Edit config/platform.yaml  -- set domain, region, compute, etc.
-#    Edit config/secrets.env    -- set API keys, DB password, registry creds
+#    Edit config/secrets.env    -- set API keys + DB/app secrets
 
 # 3. Provision cloud resources
 #    Uses cloud from config/platform.yaml (aws|gcp)

@@ -11,11 +11,9 @@ spec:
         app.kubernetes.io/name: eve-db-migrate
     spec:
       restartPolicy: OnFailure
-      imagePullSecrets:
-        - name: eve-registry
       containers:
         - name: migrate
-          image: ghcr.io/eve-horizon/api:latest
+          image: public.ecr.aws/w7c4v0w3/eve-horizon/api:latest
           imagePullPolicy: IfNotPresent
           env:
             - name: DATABASE_URL
