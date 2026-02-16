@@ -30,11 +30,10 @@ You can also trigger it manually from the GitHub Actions tab.
 
 ### Manually
 
-Check the Eve Horizon container registry for available tags:
+Check the registry configured in `config/platform.yaml` for available tags:
 
-```
-https://github.com/orgs/eve-horizon/packages
-```
+- Public ECR (default): `https://gallery.ecr.aws/w7c4v0w3/eve-horizon/api`
+- GHCR mirror: `https://github.com/orgs/eve-horizon/packages`
 
 ---
 
