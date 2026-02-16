@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: eve-worker
+  namespace: eve
+spec:
+  template:
+    spec:
+      containers:
+        - name: worker
+          env:
+            - name: EVE_COMPUTE_MODEL
+              value: eks
+            - name: EVE_DEFAULT_INGRESS_CLASS
+              value: nginx
+            - name: EVE_APP_NODE_SELECTOR_KEY
+              value: role
+            - name: EVE_APP_NODE_SELECTOR_VALUE
+              value: apps
+            - name: EVE_APP_TAINT_KEY
+              value: role
+            - name: EVE_APP_TAINT_VALUE
+              value: apps
+            - name: EVE_APP_TAINT_EFFECT
+              value: NoSchedule
+            - name: EVE_REGISTRY_HOST
+              value: registry.eve.example.com

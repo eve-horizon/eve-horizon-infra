@@ -1,0 +1,13 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: eve-agent-runtime
+  namespace: eve
+spec:
+  template:
+    spec:
+      imagePullSecrets:
+        - name: eve-registry
+      containers:
+        - name: agent-runtime
+          image: ghcr.io/eve-horizon/agent-runtime:staging

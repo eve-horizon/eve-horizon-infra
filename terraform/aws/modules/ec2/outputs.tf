@@ -17,5 +17,5 @@ output "private_ip" {
 
 output "key_pair_name" {
   description = "Name of the SSH key pair (for use by other modules)"
-  value       = aws_key_pair.main.key_name
+  value       = var.ssh_key_name
 }

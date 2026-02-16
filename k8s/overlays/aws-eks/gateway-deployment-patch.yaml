@@ -1,0 +1,14 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: eve-gateway
+  namespace: eve
+spec:
+  template:
+    spec:
+      imagePullSecrets:
+        - name: eve-registry
+      containers:
+        - name: gateway
+          image: ghcr.io/eve-horizon/gateway:latest
+          imagePullPolicy: IfNotPresent

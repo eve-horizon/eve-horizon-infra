@@ -5,6 +5,8 @@
 # EC2 Security Group
 # -----------------------------------------------------------------------------
 resource "aws_security_group" "ec2" {
+  count = var.compute_model == "k3s" ? 1 : 0
+
   name        = "${var.name_prefix}-ec2-sg"
   description = "Security group for Eve Horizon EC2 instance"
   vpc_id      = var.vpc_id
@@ -66,15 +68,6 @@ resource "aws_security_group" "rds" {
   name        = "${var.name_prefix}-rds-sg"
   description = "Security group for Eve Horizon RDS"
   vpc_id      = var.vpc_id
-
-  # PostgreSQL access only from EC2 security group
-  ingress {
-    description     = "PostgreSQL from EC2"
-    from_port       = 5432
-    to_port         = 5432
-    protocol        = "tcp"
-    security_groups = [aws_security_group.ec2.id]
-  }
 
   tags = {
     Name = "${var.name_prefix}-rds-sg"

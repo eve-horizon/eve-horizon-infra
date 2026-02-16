@@ -2,18 +2,6 @@
 # Single-node k3s server with Ubuntu 22.04
 
 # -----------------------------------------------------------------------------
-# SSH Key Pair
-# -----------------------------------------------------------------------------
-resource "aws_key_pair" "main" {
-  key_name   = "${var.name_prefix}-key"
-  public_key = var.ssh_public_key
-
-  tags = {
-    Name = "${var.name_prefix}-key"
-  }
-}
-
-# -----------------------------------------------------------------------------
 # Ubuntu AMI Data Source
 # -----------------------------------------------------------------------------
 data "aws_ami" "ubuntu" {
@@ -39,7 +27,7 @@ resource "aws_instance" "main" {
   instance_type          = var.instance_type
   subnet_id              = var.subnet_id
   vpc_security_group_ids = var.security_group_ids
-  key_name               = aws_key_pair.main.key_name
+  key_name               = var.ssh_key_name
   iam_instance_profile   = var.iam_instance_profile_name != "" ? var.iam_instance_profile_name : null
 
   root_block_device {

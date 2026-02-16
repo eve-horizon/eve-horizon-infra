@@ -40,13 +40,13 @@ resource "aws_security_group" "ollama" {
   description = "Security group for Ollama GPU host"
   vpc_id      = var.vpc_id
 
-  # Ollama API from k3s node only
+  # Ollama API from compute nodes only
   ingress {
-    description     = "Ollama API from k3s"
+    description     = "Ollama API from compute nodes"
     from_port       = 11434
     to_port         = 11434
     protocol        = "tcp"
-    security_groups = [var.k3s_security_group_id]
+    security_groups = [var.compute_security_group_id]
   }
 
   # SSH from allowed CIDRs

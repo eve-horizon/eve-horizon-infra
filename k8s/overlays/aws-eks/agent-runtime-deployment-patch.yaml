@@ -1,0 +1,15 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: eve-agent-runtime
+  namespace: eve
+spec:
+  template:
+    spec:
+      tolerations:
+        - key: role
+          operator: Equal
+          value: agents
+          effect: NoSchedule
+      nodeSelector:
+        role: agents

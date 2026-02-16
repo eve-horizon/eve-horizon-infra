@@ -15,8 +15,8 @@ variable "subnet_id" {
   type        = string
 }
 
-variable "k3s_security_group_id" {
-  description = "Security group ID of the k3s node (allowed to reach Ollama on 11434)"
+variable "compute_security_group_id" {
+  description = "Security group ID of compute nodes allowed to reach Ollama on 11434"
   type        = string
 }
 

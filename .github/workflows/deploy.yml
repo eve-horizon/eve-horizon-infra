@@ -12,6 +12,7 @@
 #
 # Secrets required:
 #   KUBECONFIG       - Base64-encoded kubeconfig for the target cluster
+#   AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY - required for AWS EKS deploys
 #   REGISTRY_TOKEN   - GitHub token with packages:read for ghcr.io/eve-horizon
 #   SLACK_WEBHOOK_URL - (optional) Slack incoming webhook for notifications
 # =============================================================================
@@ -79,6 +80,8 @@ jobs:
           echo "domain=$(yq '.domain' "$CONFIG")"              >> $GITHUB_OUTPUT
           echo "environment=$(yq '.environment' "$CONFIG")"    >> $GITHUB_OUTPUT
           echo "name_prefix=$(yq '.name_prefix' "$CONFIG")"    >> $GITHUB_OUTPUT
+          echo "compute_model=$(yq '.compute.model' "$CONFIG")" >> $GITHUB_OUTPUT
+          echo "region=$(yq '.region' "$CONFIG")"              >> $GITHUB_OUTPUT
 
       # -----------------------------------------------------------------------
       # Resolve effective version
@@ -127,11 +130,26 @@ jobs:
       # Configure kubeconfig
       # -----------------------------------------------------------------------
       - name: Configure kubeconfig (direct)
-        if: steps.config.outputs.cloud != 'gcp'
+        if: steps.config.outputs.cloud != 'gcp' && !(steps.config.outputs.cloud == 'aws' && steps.config.outputs.compute_model == 'eks')
         run: |
           mkdir -p ~/.kube
           echo "${{ secrets.KUBECONFIG }}" | base64 -d > ~/.kube/config
           chmod 600 ~/.kube/config
+
+      - name: Configure AWS credentials
+        if: steps.config.outputs.cloud == 'aws' && steps.config.outputs.compute_model == 'eks'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ steps.config.outputs.region }}
+
+      - name: Configure EKS kubeconfig
+        if: steps.config.outputs.cloud == 'aws' && steps.config.outputs.compute_model == 'eks'
+        run: |
+          aws eks update-kubeconfig \
+            --name "${{ steps.config.outputs.name_prefix }}-cluster" \
+            --region "${{ steps.config.outputs.region }}"
 
       - name: Authenticate to GCP
         if: steps.config.outputs.cloud == 'gcp'

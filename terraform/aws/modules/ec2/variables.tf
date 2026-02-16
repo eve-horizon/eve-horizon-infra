@@ -27,10 +27,9 @@ variable "root_volume_size" {
   default     = 50
 }
 
-variable "ssh_public_key" {
-  description = "SSH public key for EC2 access"
+variable "ssh_key_name" {
+  description = "Name of an existing EC2 key pair for SSH access"
   type        = string
-  sensitive   = true
 }
 
 variable "database_url" {
