@@ -8,7 +8,7 @@
 # kustomize manifests.
 #
 # Prerequisites:
-#   - kubectl configured to reach your target cluster
+#   - config/kubeconfig.yaml configured to reach your target cluster
 #   - helm v3 installed (for cert-manager)
 #   - config/secrets.env populated (see config/secrets.env.example)
 #
@@ -21,6 +21,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SECRETS_FILE="$REPO_ROOT/config/secrets.env"
+KUBECONFIG_FILE="$REPO_ROOT/config/kubeconfig.yaml"
 
 NAMESPACE="eve"
 CONFIG_FILE="$REPO_ROOT/config/platform.yaml"
@@ -48,6 +49,26 @@ info() { echo -e "${CYAN}=>${RESET} $*"; }
 ok()   { echo -e "${GREEN}OK${RESET} $*"; }
 warn() { echo -e "${YELLOW}Warning:${RESET} $*" >&2; }
 die()  { echo -e "${RED}Error:${RESET} $*" >&2; exit 1; }
+
+resolve_kubeconfig() {
+  if [[ ! -f "$KUBECONFIG_FILE" ]]; then
+    if [[ "$CLOUD" == "aws" && "$COMPUTE_MODEL" == "eks" ]]; then
+      die "Missing kubeconfig: $KUBECONFIG_FILE
+Generate it with:
+  ./bin/eve-infra kubeconfig refresh
+Then verify with:
+  ./bin/eve-infra kubeconfig doctor"
+    fi
+    die "Missing kubeconfig: $KUBECONFIG_FILE
+Create config/kubeconfig.yaml for this deployment, then verify with:
+  ./bin/eve-infra kubeconfig doctor"
+  fi
+
+  if [[ -n "${KUBECONFIG:-}" && "$KUBECONFIG" != "$KUBECONFIG_FILE" ]]; then
+    warn "Ignoring external KUBECONFIG='$KUBECONFIG' and using canonical '$KUBECONFIG_FILE'."
+  fi
+  export KUBECONFIG="$KUBECONFIG_FILE"
+}
 
 assert_safe_kube_context() {
   if [[ "${EVE_KUBE_GUARD_BYPASS:-0}" == "1" ]]; then
@@ -78,6 +99,7 @@ echo ""
 echo -e "${BOLD}Eve Horizon -- First-Time Cluster Setup${RESET}"
 echo ""
 
+resolve_kubeconfig
 assert_safe_kube_context
 
 # -------------------------------------------------------------------------
