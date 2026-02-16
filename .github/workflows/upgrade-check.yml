@@ -101,24 +101,27 @@ jobs:
               | sed '/^None$/d' \
               || echo "")
           elif [[ "$REGISTRY_HOST" == "public.ecr.aws" ]]; then
+            REGISTRY_ALIAS="${REGISTRY_PATH%%/*}"
             REGISTRY_NAMESPACE="${REGISTRY_PATH#*/}"
-            if [[ -z "$REGISTRY_NAMESPACE" || "$REGISTRY_NAMESPACE" == "$REGISTRY_PATH" ]]; then
+            if [[ -z "$REGISTRY_ALIAS" || -z "$REGISTRY_NAMESPACE" || "$REGISTRY_NAMESPACE" == "$REGISTRY_PATH" ]]; then
               echo "Invalid ECR Public registry path: ${REGISTRY_PATH}"
               echo "expected: public.ecr.aws/<alias>/<namespace>"
               echo "available=false" >> $GITHUB_OUTPUT
               exit 0
             fi
             API_REPOSITORY="${REGISTRY_NAMESPACE}/api"
-            TAGS=$(aws ecr-public describe-images \
-              --repository-name "$API_REPOSITORY" \
-              --no-sign-request \
-              --region us-east-1 \
-              --query 'imageDetails[].imageTags[]' \
-              --output text 2>/dev/null \
-              | tr '\t' '\n' \
-              | tr ' ' '\n' \
-              | sed '/^None$/d' \
-              || echo "")
+            TOKEN=$(curl -sL \
+              "https://public.ecr.aws/token/?service=public.ecr.aws&scope=repository:${API_REPOSITORY}:pull" 2>/dev/null \
+              | jq -r '.token // empty' 2>/dev/null || echo "")
+            if [[ -z "$TOKEN" ]]; then
+              echo "Could not retrieve anonymous token for public ECR"
+              echo "available=false" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+            TAGS=$(curl -sL \
+              -H "Authorization: Bearer ${TOKEN}" \
+              "https://public.ecr.aws/v2/${REGISTRY_ALIAS}/${API_REPOSITORY}/tags/list" 2>/dev/null \
+              | jq -r '.tags[]? // empty' 2>/dev/null || echo "")
           else
             echo "Unsupported registry host: ${REGISTRY_HOST}"
             echo "available=false" >> $GITHUB_OUTPUT
