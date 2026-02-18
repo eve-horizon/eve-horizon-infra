@@ -27,15 +27,9 @@ variable "name_prefix" {
 # -----------------------------------------------------------------------------
 
 variable "aws_region" {
-  description = "AWS region for all resources (legacy alias; prefer region)"
+  description = "AWS region for all resources"
   type        = string
   default     = "us-west-2"
-}
-
-variable "region" {
-  description = "Cloud region (canonical). Overrides aws_region when set."
-  type        = string
-  default     = null
 }
 
 # -----------------------------------------------------------------------------
@@ -59,27 +53,15 @@ variable "allowed_ssh_cidrs" {
 # -----------------------------------------------------------------------------
 
 variable "instance_type" {
-  description = "EC2 instance type for the Eve Horizon server (legacy alias; prefer compute_type)"
+  description = "EC2 instance type for the Eve Horizon server"
   type        = string
   default     = "m6i.xlarge"
 }
 
 variable "root_volume_size" {
-  description = "Size in GB of the root EBS volume (legacy alias; prefer compute_disk_size_gb)"
+  description = "Size in GB of the root EBS volume"
   type        = number
   default     = 50
-}
-
-variable "compute_type" {
-  description = "Compute class/type for primary nodes (canonical). Overrides instance_type when set."
-  type        = string
-  default     = null
-}
-
-variable "compute_disk_size_gb" {
-  description = "Primary node disk size in GB (canonical). Overrides root_volume_size when set."
-  type        = number
-  default     = null
 }
 
 variable "ssh_public_key" {
@@ -127,15 +109,9 @@ variable "db_password" {
 }
 
 variable "db_instance_class" {
-  description = "RDS instance class for PostgreSQL (legacy alias; prefer database_instance_class)"
+  description = "RDS instance class for PostgreSQL"
   type        = string
   default     = "db.t3.micro"
-}
-
-variable "database_instance_class" {
-  description = "Managed database instance class/tier (canonical). Overrides db_instance_class when set."
-  type        = string
-  default     = null
 }
 
 variable "deletion_protection" {
@@ -155,27 +131,15 @@ variable "ollama_enabled" {
 }
 
 variable "ollama_instance_type" {
-  description = "EC2 instance type for the Ollama GPU host (legacy alias; prefer ollama_compute_type)"
+  description = "EC2 instance type for the Ollama GPU host (must have NVIDIA GPU)"
   type        = string
   default     = "g5.xlarge"
 }
 
 variable "ollama_volume_size" {
-  description = "EBS volume size in GB for Ollama model storage (legacy alias; prefer ollama_disk_size_gb)"
+  description = "EBS volume size in GB for Ollama model storage"
   type        = number
   default     = 100
-}
-
-variable "ollama_compute_type" {
-  description = "Compute class/type for the Ollama host (canonical). Overrides ollama_instance_type when set."
-  type        = string
-  default     = null
-}
-
-variable "ollama_disk_size_gb" {
-  description = "Disk size in GB for Ollama model storage (canonical). Overrides ollama_volume_size when set."
-  type        = number
-  default     = null
 }
 
 variable "ollama_idle_timeout_minutes" {
