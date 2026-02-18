@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "source_branch": "main",
+  "template_repo": "../../eve-horizon/eve-horizon-infra",
+  "template_branch": "main",
+  "last_checked_commit": null,
+  "last_checked_at": null,
+  "policy": {
+    "always": [
+      "k8s/base/**",
+      "terraform/*/modules/**",
+      "bin/eve-infra",
+      "scripts/**",
+      ".github/workflows/**",
+      "skills/**",
+      "skills.txt"
+    ],
+    "never": [
+      "config/platform.yaml",
+      "config/secrets.env",
+      "config/kubeconfig.yaml",
+      ".upstream-sync.json",
+      "terraform/*/terraform.tfvars"
+    ],
+    "ask": [
+      "k8s/overlays/**",
+      "terraform/*/main.tf",
+      "terraform/*/variables.tf",
+      "terraform/*/outputs.tf",
+      ".gitignore",
+      "CLAUDE.md",
+      "README.md",
+      "DEPLOYMENT.md",
+      "UPGRADE.md",
+      "CHANGELOG.md"
+    ]
+  },
+  "path_aliases": [
+    {
+      "from": "k8s/overlays/aws-eks/",
+      "to": "k8s/overlays/aws/"
+    },
+    {
+      "from": "k8s/overlays/aws/",
+      "to": "k8s/overlays/aws-eks/"
+    }
+  ],
+  "history": []
+}
