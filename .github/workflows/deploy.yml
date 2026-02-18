@@ -180,6 +180,43 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
 
       # -----------------------------------------------------------------------
+      # Verify service images for the selected version are available before rollout.
+      # This prevents tag-triggered deploys from racing ahead of image publication.
+      # -----------------------------------------------------------------------
+      - name: Wait for service images to be available
+        id: wait-for-images
+        env:
+          VERSION: ${{ steps.version.outputs.effective }}
+          REGISTRY: ${{ steps.config.outputs.registry }}
+        run: |
+          set -euo pipefail
+
+          SERVICES=(api gateway orchestrator worker agent-runtime sso)
+          MAX_ATTEMPTS=30
+
+          for SERVICE in "${SERVICES[@]}"; do
+            IMAGE="${REGISTRY}/${SERVICE}:${VERSION}"
+            echo "Checking image availability for ${IMAGE}"
+
+            for ATTEMPT in $(seq 1 "${MAX_ATTEMPTS}"); do
+              if docker manifest inspect "${IMAGE}" >/dev/null 2>&1; then
+                echo "Available: ${IMAGE}"
+                break
+              fi
+
+              if [ "${ATTEMPT}" -ge "${MAX_ATTEMPTS}" ]; then
+                echo "::error::Timed out waiting for image ${IMAGE}"
+                exit 1
+              fi
+
+              echo "Image not ready yet (attempt ${ATTEMPT}/${MAX_ATTEMPTS}); retrying in 10s"
+              sleep 10
+            done
+          done
+
+          echo "all_images_available=true" >> "${GITHUB_OUTPUT}"
+
+      # -----------------------------------------------------------------------
       # Update image tags in overlay patches
       # -----------------------------------------------------------------------
       - name: Update image tags
