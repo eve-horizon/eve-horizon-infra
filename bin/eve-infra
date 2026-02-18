@@ -261,26 +261,24 @@ cmd_version() {
       tags="$(echo "$response" | jq -r '.tags[]? // empty' 2>/dev/null || true)"
       ;;
     public.ecr.aws)
-      if ! command -v aws &>/dev/null; then
-        warn "aws CLI is required to query public ECR tags."
+      if ! command -v curl &>/dev/null || ! command -v jq &>/dev/null; then
+        warn "curl + jq are required to query public ECR tags."
         return
       fi
-      local registry_namespace
-      registry_namespace="${registry_path#*/}" # drop the public alias
-      if [[ -z "$registry_namespace" || "$registry_namespace" == "$registry_path" ]]; then
+      local registry_alias registry_namespace repository token tags_json
+      registry_alias="${registry_path%%/*}"
+      registry_namespace="${registry_path#*/}"
+      if [[ -z "$registry_alias" || -z "$registry_namespace" || "$registry_namespace" == "$registry_path" ]]; then
         warn "Invalid public ECR registry path '${registry}'. Expected public.ecr.aws/<alias>/<namespace>."
         return
       fi
-      tags="$(aws ecr-public describe-images \
-        --repository-name "${registry_namespace}/api" \
-        --region us-east-1 \
-        --no-sign-request \
-        --query 'imageDetails[].imageTags[]' \
-        --output text 2>/dev/null \
-        | tr '\t' '\n' \
-        | tr ' ' '\n' \
-        | sed '/^None$/d;/^$/d' \
-        || true)"
+      repository="${registry_namespace}/api"
+      token="$(curl -sfL "https://public.ecr.aws/token/?service=public.ecr.aws&scope=repository:${repository}:pull" \
+        | jq -r '.token // empty' 2>/dev/null || true)"
+      [[ -n "$token" ]] || return
+      tags_json="$(curl -sfL -H "Authorization: Bearer ${token}" \
+        "https://public.ecr.aws/v2/${registry_alias}/${repository}/tags/list" 2>/dev/null || true)"
+      tags="$(echo "$tags_json" | jq -r '.tags[]? // empty' 2>/dev/null || true)"
       ;;
     *.dkr.ecr.*.amazonaws.com)
       if ! command -v aws &>/dev/null; then
