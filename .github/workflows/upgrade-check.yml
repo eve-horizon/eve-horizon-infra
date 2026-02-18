@@ -7,7 +7,6 @@
 # version in config/platform.yaml.
 #
 # Secrets required:
-#   REGISTRY_TOKEN - GitHub token with packages:read (required only for GHCR registries)
 #   AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY - required when platform.registry points to private ECR
 # =============================================================================
 
@@ -64,7 +63,6 @@ jobs:
       - name: Check latest available version
         id: latest
         env:
-          REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
           REGISTRY: ${{ steps.config.outputs.registry }}
           CURRENT: ${{ steps.config.outputs.current_version }}
           REGION: ${{ steps.config.outputs.region }}
@@ -77,23 +75,7 @@ jobs:
           REGISTRY_PATH="${REGISTRY#*/}"
           TAGS=""
 
-          if [[ "$REGISTRY_HOST" == "ghcr.io" ]]; then
-            # GHCR path format: ghcr.io/<namespace>
-            ORG_IMAGE="${REGISTRY_PATH}"
-            TAGS=$(curl -sL \
-              -H "Authorization: Bearer $(echo -n "$REGISTRY_TOKEN" | base64 -w0 2>/dev/null || echo -n "$REGISTRY_TOKEN" | base64)" \
-              "https://ghcr.io/v2/${ORG_IMAGE}/api/tags/list" 2>/dev/null \
-              | jq -r '.tags[]? // empty' 2>/dev/null || echo "")
-
-            if [[ -z "$TAGS" ]]; then
-              # Fallback: try using gh CLI with the packages API.
-              ORG="${ORG_IMAGE%%/*}"
-              TAGS=$(gh api \
-                -H "Accept: application/vnd.github+json" \
-                "/orgs/${ORG}/packages/container/api/versions" \
-                --jq '.[].metadata.container.tags[]' 2>/dev/null || echo "")
-            fi
-          elif [[ "$REGISTRY_HOST" == *.dkr.ecr.*.amazonaws.com ]]; then
+          if [[ "$REGISTRY_HOST" == *.dkr.ecr.*.amazonaws.com ]]; then
             # ECR path format: <account>.dkr.ecr.<region>.amazonaws.com/<namespace>
             API_REPOSITORY="${REGISTRY_PATH}/api"
             TAGS=$(aws ecr describe-images \

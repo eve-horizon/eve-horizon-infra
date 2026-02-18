@@ -252,14 +252,6 @@ cmd_version() {
   tags=""
 
   case "$registry_host" in
-    ghcr.io)
-      if ! command -v curl &>/dev/null || ! command -v jq &>/dev/null; then
-        warn "curl + jq are required to query GHCR tags."
-        return
-      fi
-      response="$(curl -sfL "https://ghcr.io/v2/${registry_path}/api/tags/list" 2>/dev/null || true)"
-      tags="$(echo "$response" | jq -r '.tags[]? // empty' 2>/dev/null || true)"
-      ;;
     public.ecr.aws)
       if ! command -v curl &>/dev/null || ! command -v jq &>/dev/null; then
         warn "curl + jq are required to query public ECR tags."
@@ -327,6 +319,7 @@ cmd_kubeconfig_doctor() {
   resolve_kubeconfig
 
   local cloud compute_model prefix ctx expected_cluster
+  local cluster_server cluster_host
   cloud="$(cfg_get 'cloud')"
   compute_model="$(cfg_get 'compute.model')"
   prefix="$(cfg_get 'name_prefix')"
@@ -335,6 +328,26 @@ cmd_kubeconfig_doctor() {
 
   [[ -n "$ctx" ]] || die "kubeconfig exists but has no current context: $KUBECONFIG"
   assert_safe_kube_context read
+
+  # Surface endpoint DNS failures explicitly (common when local DNS, host overrides, or
+  # stale kubeconfig entries are present).
+  cluster_server="$(kubectl --kubeconfig "$KUBECONFIG" config view --minify --raw -o jsonpath='{.clusters[0].cluster.server}' 2>/dev/null || true)"
+  if [[ -n "$cluster_server" ]]; then
+    cluster_host="${cluster_server#https://}"
+    cluster_host="${cluster_host#http://}"
+    cluster_host="${cluster_host%%/*}"
+    info "Kubernetes API server: $cluster_server"
+    if command -v getent >/dev/null 2>&1; then
+      if ! getent hosts "$cluster_host" >/dev/null 2>&1; then
+        die "DNS resolution failed for cluster host '$cluster_host' (no such host).
+Run 'eve-infra kubeconfig refresh' on this environment."
+      fi
+    else
+      warn "getent unavailable; skipping DNS lookup precheck for '$cluster_host'."
+    fi
+  else
+    warn "Could not read Kubernetes API server URL from kubeconfig."
+  fi
 
   info "Validating Kubernetes API connectivity..."
   kube cluster-info >/dev/null 2>&1 || die "Unable to reach cluster with $KUBECONFIG (context: $ctx)"
