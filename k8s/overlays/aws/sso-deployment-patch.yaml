@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: eve-sso
+  namespace: eve
+spec:
+  template:
+    spec:
+      containers:
+        - name: sso
+          image: public.ecr.aws/w7c4v0w3/eve-horizon/sso:staging
+          env:
+            - name: SUPABASE_AUTH_EXTERNAL_URL
+              value: "https://auth.eh1.incept5.dev"
+            - name: EVE_DEFAULT_DOMAIN
+              value: "eh1.incept5.dev"
+            - name: EVE_SSO_SECURE_COOKIES
+              value: "true"
+

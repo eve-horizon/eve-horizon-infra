@@ -8,12 +8,15 @@ spec:
     spec:
       containers:
         - name: api
-          image: public.ecr.aws/w7c4v0w3/eve-horizon/api:latest
-          imagePullPolicy: IfNotPresent
+          image: public.ecr.aws/w7c4v0w3/eve-horizon/api:staging
           env:
+            - $patch: replace
             - name: DATABASE_URL
-              value: postgres://eve:REPLACE_ME@db.example.com:5432/eve
-            - name: OTEL_ENABLED
-              value: "true"
-            - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: http://otel-collector.eve.svc.cluster.local:4318
+              valueFrom:
+                secretKeyRef:
+                  name: eve-staging-db
+                  key: DATABASE_URL
+            - name: API_PORT
+              value: "4701"
+            - name: WORKER_URL
+              value: http://eve-worker.eve.svc.cluster.local:4749

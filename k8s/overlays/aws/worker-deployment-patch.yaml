@@ -8,18 +8,44 @@ spec:
     spec:
       containers:
         - name: worker
-          image: public.ecr.aws/w7c4v0w3/eve-horizon/worker:latest
-          imagePullPolicy: IfNotPresent
+          image: public.ecr.aws/w7c4v0w3/eve-horizon/worker:staging
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 30
           env:
+            - $patch: replace
             - name: DATABASE_URL
-              value: postgres://eve:REPLACE_ME@db.example.com:5432/eve
+              valueFrom:
+                secretKeyRef:
+                  name: eve-staging-db
+                  key: DATABASE_URL
+            - name: EVE_RUNTIME
+              value: k8s
+            - name: EVE_K8S_NAMESPACE
+              value: eve
+            - name: EVE_BUILDKIT_ADDR
+              value: tcp://buildkitd.eve.svc:1234
             - name: EVE_RUNNER_IMAGE
-              value: public.ecr.aws/w7c4v0w3/eve-horizon/worker-full:latest
+              value: "public.ecr.aws/w7c4v0w3/eve-horizon/worker:staging"
+            - name: EVE_RUNNER_SERVICE_ACCOUNT
+              value: eve-worker
+            - name: EVE_API_URL
+              value: http://eve-api:4701
+            - name: EVE_PUBLIC_API_URL
+              value: "https://api.eh1.incept5.dev"
+            - name: WORKER_PORT
+              value: "4749"
             - name: EVE_DEFAULT_DOMAIN
-              value: apps.example.com
-            - name: EVE_COMPUTE_MODEL
-              value: k3s
-            - name: OTEL_ENABLED
-              value: "true"
-            - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: http://otel-collector.eve.svc.cluster.local:4318
+              value: "eh1.incept5.dev"
+            - name: EVE_DEFAULT_INGRESS_CLASS
+              value: "traefik"
+            - name: EVE_DEFAULT_TLS_CLUSTER_ISSUER
+              value: "letsencrypt-prod"

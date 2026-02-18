@@ -9,7 +9,7 @@ Complete guide to deploying and operating an Eve Horizon instance. This covers f
   - [2. Configure platform.yaml](#2-configure-platformyaml)
   - [3. Create secrets.env](#3-create-secretsenv)
   - [4. Provision Infrastructure (Terraform)](#4-provision-infrastructure-terraform)
-  - [5. Fetch Kubeconfig](#5-fetch-kubeconfig)
+  - [5. Configure Kubeconfig](#5-configure-kubeconfig)
   - [6. Run Cluster Setup](#6-run-cluster-setup)
   - [7. Deploy Eve Horizon](#7-deploy-eve-horizon)
   - [8. Verify](#8-verify)
@@ -48,18 +48,16 @@ Key fields to change:
 | Field | Example | Notes |
 |-------|---------|-------|
 | `name_prefix` | `acme-eve-prod` | Unique per deployment in the same cloud account |
-| `cloud` | `aws` or `gcp` | Selects Terraform root + k8s overlay defaults |
-| `region` | `eu-west-1` or `us-central1` | Cloud region for resources |
-| `domain` | `eve.acme.com` | Must be under a managed DNS zone you control |
+| `cloud` | `aws` | Only `aws` is supported today |
+| `region` | `eu-west-1` | AWS region for all resources |
+| `domain` | `eve.acme.com` | Must be under a Route53 hosted zone you control |
 | `api_host` | `api.eve.acme.com` | Convention: `api.<domain>` |
 | `app_domain` | `apps.acme.com` | Wildcard DNS recommended for deployed apps |
-| `route53_zone_id` | `Z0123456789ABC` | Required for AWS (Route53) |
-| `gcp_project_id` | `my-project-id` | Required for GCP |
-| `dns_zone_name` | `example-com` | Required for GCP Cloud DNS |
+| `route53_zone_id` | `Z0123456789ABC` | Found in AWS Console > Route53 |
 | `tls.email` | `ops@acme.com` | For Let's Encrypt certificate notifications |
 | `ssh_public_key` | `ssh-ed25519 AAAA...` | Contents of your `.pub` file |
 | `compute.type` | `m6i.xlarge` | See comments in the file for sizing guidance |
-| `database.provider` | `rds` or `cloud-sql` | Managed DB provider should match cloud |
+| `database.provider` | `rds` | Use `rds` for production, `in-cluster` for dev |
 | `network.allowed_ssh_cidrs` | `["203.0.113.42/32"]` | Restrict to your IP |
 
 The file is heavily commented -- read through it once before deploying.
@@ -90,7 +88,7 @@ openssl rand -base64 24 # -> used in DATABASE_URL
 Set at minimum:
 
 - `EVE_SECRETS_MASTER_KEY`, `EVE_INTERNAL_API_KEY`, `EVE_BOOTSTRAP_TOKEN`
-- `DATABASE_URL` -- constructed from Terraform output after provisioning (see step 4)
+- `DATABASE_URL` -- constructed after Terraform provisions RDS (see step 4)
 - Registry pull credentials only if using a private registry (for example `GHCR_USERNAME` + `GHCR_TOKEN`)
 - `ANTHROPIC_API_KEY` and/or `OPENAI_API_KEY` -- at least one LLM provider
 - `GITHUB_TOKEN` -- PAT with `repo`, `read:org` scopes
@@ -100,19 +98,17 @@ Set at minimum:
 ### 4. Provision Infrastructure (Terraform)
 
 ```bash
-# Pick terraform root from config/platform.yaml (aws|gcp)
-CLOUD="$(grep '^cloud:' config/platform.yaml | awk '{print $2}')"
-
 # Create your Terraform variable file
-cp "terraform/${CLOUD}/terraform.tfvars.example" "terraform/${CLOUD}/terraform.tfvars"
-$EDITOR "terraform/${CLOUD}/terraform.tfvars"
+cp terraform/aws/terraform.tfvars.example terraform/aws/terraform.tfvars
+$EDITOR terraform/aws/terraform.tfvars
 ```
 
 Fill in values that match your `platform.yaml`. The key fields to set:
 
-- `name_prefix` and `environment` -- must match `platform.yaml`
-- `region` (canonical; legacy `aws_region`/`gcp_region` aliases still supported) -- must match `platform.yaml`
-- DNS fields (`domain` + `route53_zone_id` for AWS, `domain` + `dns_zone_name` for GCP)
+- `name_prefix` -- must match `platform.yaml`
+- `region` -- must match `platform.yaml`
+- `compute_model` -- `k3s` or `eks` (must match `platform.yaml` `compute.model`)
+- `domain` and `route53_zone_id` -- must match `platform.yaml`
 - `ssh_public_key` -- same key as `platform.yaml`
 - `db_password` -- generate a strong password
 - `allowed_ssh_cidrs` -- restrict to your IP
@@ -120,35 +116,45 @@ Fill in values that match your `platform.yaml`. The key fields to set:
 Then provision:
 
 ```bash
-terraform -chdir="terraform/${CLOUD}" init
-terraform -chdir="terraform/${CLOUD}" plan     # Review what will be created
-terraform -chdir="terraform/${CLOUD}" apply    # Type "yes" to confirm
+cd terraform/aws
+terraform init
+terraform plan     # Review what will be created
+terraform apply    # Type "yes" to confirm
 
 # Save the outputs -- you'll need them
-terraform -chdir="terraform/${CLOUD}" output
-terraform -chdir="terraform/${CLOUD}" output -raw database_url   # -> paste into secrets.env as DATABASE_URL
-terraform -chdir="terraform/${CLOUD}" output -raw ssh_command    # -> use to connect to the server
+terraform output
+terraform output -raw database_url   # -> paste into secrets.env as DATABASE_URL
+# k3s mode:
+terraform output -raw ssh_command     # -> use to connect to the server
+# EKS mode:
+terraform output -raw cluster_name
+terraform output -raw cluster_autoscaler_irsa_role_arn
 ```
 
-Terraform creates cloud networking, managed database, DNS records, and cluster compute for the selected provider.
+Terraform always creates VPC/subnets/security groups/RDS/DNS and then:
+- `k3s` mode: a single EC2 host with k3s.
+- `eks` mode: EKS control plane + managed node groups + IRSA roles + registry S3.
 
-### 5. Fetch Kubeconfig
+### 5. Configure Kubeconfig
 
-After Terraform completes, configure kubeconfig:
+After Terraform completes, configure `kubectl` based on your compute model:
 
 ```bash
-# The exact command is in terraform output for your selected cloud
-terraform -chdir="terraform/${CLOUD}" output -raw kubeconfig_command | bash
+# k3s mode: the exact command is in terraform output
+terraform output -raw kubeconfig_command | bash
 
-# Verify connectivity
+# EKS mode:
+aws eks update-kubeconfig --name <name_prefix>-cluster --region <region>
+
+# Verify connectivity for either mode
 kubectl get nodes
 ```
 
-You should see one or more nodes in `Ready` state.
+In `k3s` mode you should see one node. In `eks` mode you should see the default managed node group.
 
 ### 6. Run Cluster Setup
 
-The setup script installs cluster-level prerequisites: the `eve` namespace, cert-manager, Let's Encrypt issuers, the container registry pull secret, and application secrets.
+The setup script installs cluster-level prerequisites: the `eve` namespace, cert-manager, Let's Encrypt issuers, registry pull secret, app secrets, and EKS extras (nginx-ingress + cluster-autoscaler) when `overlay: aws-eks`.
 
 ```bash
 ./scripts/setup.sh
@@ -158,6 +164,16 @@ Prerequisites for this step:
 - `kubectl` configured (step 5)
 - `helm` v3 installed (for cert-manager)
 - `config/secrets.env` populated (step 3, with DATABASE_URL from step 4)
+
+If using `compute_model=eks`, once ingress-nginx is installed and the NLB exists, complete DNS alias cutover:
+
+```bash
+# Get ingress controller NLB details
+kubectl -n ingress-nginx get svc ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].hostname}{"\n"}'
+
+# Set ingress_lb_dns_name and ingress_lb_zone_id in terraform.tfvars, then:
+terraform -chdir=terraform/aws apply -target=module.dns
+```
 
 ### 7. Deploy Eve Horizon
 
@@ -172,7 +188,7 @@ bin/eve-infra db migrate
 bin/eve-infra health
 ```
 
-The deploy command builds kustomize manifests from `k8s/overlays/<cloud>/` and applies them to the cluster, then waits for all rollouts to complete.
+The deploy command builds kustomize manifests from `k8s/overlays/<overlay>/` (from `config/platform.yaml`) and applies them to the cluster, then waits for rollouts.
 
 ### 8. Verify
 
@@ -284,21 +300,25 @@ bin/eve-infra db connect             # Interactive psql session
 bin/eve-infra db backup              # Show backup instructions for your provider
 ```
 
-### SSH Access
+### SSH Access (k3s Mode)
 
 ```bash
-# Pick terraform root from config/platform.yaml (aws|gcp)
-CLOUD="$(grep '^cloud:' config/platform.yaml | awk '{print $2}')"
-
 # Get the SSH command from Terraform outputs
-terraform -chdir="terraform/${CLOUD}" output -raw ssh_command
+terraform -chdir=terraform/aws output -raw ssh_command
 
-# AWS (k3s): direct SSH
-ssh ubuntu@<server-ip>                  # if cloud=aws
+# Or directly
+ssh ubuntu@<server-ip>
+
+# On the server, k3s commands require sudo
 sudo kubectl get pods -n eve
+sudo k3s kubectl logs -n eve deployment/eve-api
+```
 
-# GCP (GKE): node SSH for debugging
-gcloud compute ssh --project=<project> --zone=<zone> <node-name>  # if cloud=gcp
+For EKS mode, use AWS auth instead of SSH:
+
+```bash
+aws eks update-kubeconfig --name <name_prefix>-cluster --region <region>
+kubectl get nodes
 ```
 
 ---
@@ -316,13 +336,17 @@ Deploys Eve to the cluster. Triggered by:
 - **Repository dispatch:** `type: deploy` with `version` in the payload (for cross-repo CI)
 
 Required GitHub secrets:
-- `KUBECONFIG` -- required for direct kubeconfig mode (AWS/custom overlays)
-- `GCP_SA_KEY`, `GCP_PROJECT_ID`, `GKE_CLUSTER_NAME`, `GKE_ZONE` -- required for GCP deploys
+- `KUBECONFIG` -- required for non-EKS deployments (base64-encoded kubeconfig)
+- `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` -- required for EKS deployments
 - `REGISTRY_TOKEN` -- required only when `platform.registry` uses `ghcr.io/*`
-- `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` -- required only when `platform.registry` uses private ECR
 - `SLACK_WEBHOOK_URL` -- (optional) for deploy notifications
 
 The workflow runs migrations, applies manifests, waits for rollouts, runs a health check, and auto-rolls-back on failure.
+
+Local safety guardrails:
+- `bin/eve-infra` and `scripts/setup.sh` validate active kube context before mutating operations.
+- Use `EVE_KUBE_GUARD_BYPASS=1` only for intentional break-glass operations.
+- Prefer per-repo kubeconfig/profile isolation (`direnv` + `config/kubeconfig.yaml`) to avoid cross-repo context leakage.
 
 ### Health Check Workflow (`.github/workflows/health-check.yml`)
 
@@ -336,7 +360,6 @@ Runs daily at 08:00 UTC. Queries the container registry for the latest semver ta
 
 Required GitHub secrets:
 - `REGISTRY_TOKEN` -- required only when `platform.registry` uses `ghcr.io/*`
-- `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` -- required only when `platform.registry` uses private ECR
 
 ---
 
@@ -436,7 +459,7 @@ kubectl describe clusterissuer letsencrypt-prod
 
 Common causes:
 - `tls.email` not set in `platform.yaml` (setup.sh warns about this)
-- DNS not yet propagated (Route53/Cloud DNS changes can take a few minutes)
+- DNS not yet propagated (Route53 changes can take a few minutes)
 - Using `letsencrypt-prod` during testing and hitting rate limits -- switch to `letsencrypt-staging` first
 
 ### Database Migration Fails
@@ -452,8 +475,8 @@ bin/eve-infra db migrate
 
 Common causes:
 - `DATABASE_URL` is incorrect in `secrets.env`
-- Managed DB network access is misconfigured (Terraform should wire this, but verify)
-- Database instance does not exist yet (Terraform creates it for managed providers)
+- RDS security group does not allow connections from compute nodes (EC2 or EKS node SG)
+- Database does not exist yet (Terraform's RDS module creates it)
 
 ### Cannot Reach the API (Connection Refused / Timeout)
 
@@ -461,9 +484,9 @@ Common causes:
 2. Check the server is reachable: `curl -sk https://<server-ip>:443`
 3. Check the API pod is running: `kubectl get pods -n eve -l app.kubernetes.io/name=eve-api`
 4. Check the ingress: `kubectl get ingress -n eve`
-5. Check ingress controller logs (`traefik` on k3s, `ingress-nginx` on GKE):
-   `kubectl logs -n kube-system -l app.kubernetes.io/name=traefik`
-   `kubectl logs -n ingress-nginx -l app.kubernetes.io/name=ingress-nginx`
+5. Check ingress controller logs:
+   - aws-eks: `kubectl logs -n ingress-nginx -l app.kubernetes.io/component=controller`
+   - k3s: `kubectl logs -n kube-system -l app.kubernetes.io/name=traefik`
 
 ### Deploy Workflow Fails
 
@@ -491,8 +514,7 @@ If you need to tear down and rebuild (non-production only):
 kubectl delete namespace eve
 
 # Destroy cloud infrastructure
-CLOUD="$(grep '^cloud:' config/platform.yaml | awk '{print $2}')"
-terraform -chdir="terraform/${CLOUD}" destroy
+cd terraform/aws && terraform destroy
 
 # Start fresh from step 4
 ```

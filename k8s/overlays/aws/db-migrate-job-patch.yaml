@@ -13,13 +13,13 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: migrate
-          image: public.ecr.aws/w7c4v0w3/eve-horizon/api:latest
-          imagePullPolicy: IfNotPresent
+          image: public.ecr.aws/w7c4v0w3/eve-horizon/api:staging
+          imagePullPolicy: Always
           env:
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: eve-app
+                  name: eve-staging-db
                   key: DATABASE_URL
           command:
             - node

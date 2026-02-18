@@ -4,8 +4,42 @@ metadata:
   name: eve-agent-runtime
   namespace: eve
 spec:
+  replicas: 1
   template:
     spec:
+      serviceAccountName: eve-worker
       containers:
         - name: agent-runtime
           image: public.ecr.aws/w7c4v0w3/eve-horizon/agent-runtime:staging
+          imagePullPolicy: Always
+          env:
+            - $patch: replace
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: eve-staging-db
+                  key: DATABASE_URL
+            - name: EVE_API_URL
+              value: http://eve-api:4701
+            - name: AGENT_RUNTIME_PORT
+              value: "4812"
+            - name: EVE_ORG_ID
+              value: org_manualtestorg
+            - name: AGENT_RUNTIME_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: AGENT_RUNTIME_CAPACITY
+              value: "8"
+            - name: AGENT_RUNTIME_STATUS
+              value: healthy
+            - name: EVE_ORG_FS_ROOT
+              value: /org
+            - name: EVE_K8S_NAMESPACE
+              value: eve
+            - name: EVE_RUNTIME
+              value: k8s
+            - name: WORKSPACE_ROOT
+              value: /opt/eve/workspaces
+            - name: EVE_RUNNER_IMAGE
+              value: "public.ecr.aws/w7c4v0w3/eve-horizon/worker:staging"

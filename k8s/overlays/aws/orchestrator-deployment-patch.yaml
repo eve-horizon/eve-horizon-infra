@@ -8,15 +8,29 @@ spec:
     spec:
       containers:
         - name: orchestrator
-          image: public.ecr.aws/w7c4v0w3/eve-horizon/orchestrator:latest
-          imagePullPolicy: IfNotPresent
+          image: public.ecr.aws/w7c4v0w3/eve-horizon/orchestrator:staging
           env:
+            - $patch: replace
             - name: DATABASE_URL
-              value: postgres://eve:REPLACE_ME@db.example.com:5432/eve
-            - name: OTEL_ENABLED
-              value: "true"
-            - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: http://otel-collector.eve.svc.cluster.local:4318
+              valueFrom:
+                secretKeyRef:
+                  name: eve-staging-db
+                  key: DATABASE_URL
+            - name: EVE_API_URL
+              value: http://eve-api:4701
+            - name: ORCHESTRATOR_PORT
+              value: "4702"
+            - name: WORKER_URL
+              value: http://eve-worker:4749
+            - name: EVE_WORKER_URLS
+              value: default-worker=http://eve-worker:4749
+            - name: EVE_AGENT_RUNTIME_URL
+              value: http://eve-agent-runtime:4812
+            - name: EVE_AGENT_RUNTIME_URLS
+              value: >-
+                eve-agent-runtime-0=http://eve-agent-runtime-0.eve-agent-runtime.eve.svc.cluster.local:4812
+            - name: WORKSPACE_ROOT
+              value: /opt/eve/workspaces
             - name: EVE_MANAGED_DB_RECONCILER_ENABLED
               value: "true"
             - name: EVE_MANAGED_DB_LOCAL_SEED

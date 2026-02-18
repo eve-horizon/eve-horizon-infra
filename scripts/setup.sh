@@ -29,6 +29,8 @@ CONFIG_FILE="$REPO_ROOT/config/platform.yaml"
 # Read cloud provider from platform.yaml
 CLOUD="$(sed -n 's/^cloud: *//p' "$CONFIG_FILE" | head -1 | tr -d '"' | tr -d "'")"
 CLOUD="${CLOUD:-aws}"
+OVERLAY="$(sed -n 's/^overlay: *//p' "$CONFIG_FILE" | head -1 | tr -d '"' | tr -d "'")"
+OVERLAY="${OVERLAY:-$CLOUD}"
 REGION="$(sed -n 's/^region: *//p' "$CONFIG_FILE" | head -1 | tr -d '"' | tr -d "'")"
 REGION="${REGION:-us-west-2}"
 COMPUTE_MODEL="$(sed -n '/^compute:/,/^[^ ]/{s/^  model: *//p;}' "$CONFIG_FILE" | head -1 | sed 's/[[:space:]]*#.*$//' | tr -d '"' | tr -d "'" | xargs)"
@@ -53,15 +55,10 @@ die()  { echo -e "${RED}Error:${RESET} $*" >&2; exit 1; }
 
 resolve_kubeconfig() {
   if [[ ! -f "$KUBECONFIG_FILE" ]]; then
-    if [[ "$CLOUD" == "aws" && "$COMPUTE_MODEL" == "eks" ]]; then
-      die "Missing kubeconfig: $KUBECONFIG_FILE
+    die "Missing kubeconfig: $KUBECONFIG_FILE
 Generate it with:
   ./bin/eve-infra kubeconfig refresh
 Then verify with:
-  ./bin/eve-infra kubeconfig doctor"
-    fi
-    die "Missing kubeconfig: $KUBECONFIG_FILE
-Create config/kubeconfig.yaml for this deployment, then verify with:
   ./bin/eve-infra kubeconfig doctor"
   fi
 
@@ -95,6 +92,7 @@ Switch context first or intentionally override with EVE_KUBE_GUARD_BYPASS=1."
 
   info "Using kube context: ${ctx}"
 }
+
 echo ""
 echo -e "${BOLD}Eve Horizon -- First-Time Cluster Setup${RESET}"
 echo ""
@@ -110,10 +108,10 @@ kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -
 ok "Namespace '${NAMESPACE}' exists."
 
 # -------------------------------------------------------------------------
-# 2. Install nginx-ingress (GCP only — GKE does not include Traefik)
+# 2. Install nginx-ingress when required by overlay
 # -------------------------------------------------------------------------
-if [ "$CLOUD" = "gcp" ]; then
-  info "Installing nginx-ingress controller (GKE)..."
+if [ "$CLOUD" = "gcp" ] || [ "$OVERLAY" = "aws-eks" ]; then
+  info "Installing nginx-ingress controller..."
   if kubectl get namespace ingress-nginx &>/dev/null; then
     ok "ingress-nginx namespace already exists, skipping install."
   else
@@ -122,18 +120,61 @@ if [ "$CLOUD" = "gcp" ]; then
   https://helm.sh/docs/intro/install/"
     fi
 
-    # Get ingress IP from terraform output if available
-    INGRESS_IP="$(terraform -chdir="$REPO_ROOT/terraform/gcp" output -raw ingress_ip 2>/dev/null || true)"
-
     helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx --force-update
     helm repo update
 
-    helm install ingress-nginx ingress-nginx/ingress-nginx \
-      --namespace ingress-nginx --create-namespace \
-      ${INGRESS_IP:+--set controller.service.loadBalancerIP="$INGRESS_IP"} \
-      --wait
+    if [ "$CLOUD" = "gcp" ]; then
+      # Get ingress IP from terraform output if available
+      INGRESS_IP="$(terraform -chdir="$REPO_ROOT/terraform/gcp" output -raw ingress_ip 2>/dev/null || true)"
+      helm install ingress-nginx ingress-nginx/ingress-nginx \
+        --namespace ingress-nginx --create-namespace \
+        ${INGRESS_IP:+--set controller.service.loadBalancerIP="$INGRESS_IP"} \
+        --wait
+    else
+      helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+        --namespace ingress-nginx --create-namespace \
+        --set controller.service.type=LoadBalancer \
+        --set controller.service.annotations."service\.beta\.kubernetes\.io/aws-load-balancer-type"=nlb \
+        --set controller.service.annotations."service\.beta\.kubernetes\.io/aws-load-balancer-scheme"=internet-facing \
+        --wait
+    fi
 
     ok "nginx-ingress installed."
+  fi
+fi
+
+# -------------------------------------------------------------------------
+# 2b. Install Cluster Autoscaler (AWS EKS overlay)
+# -------------------------------------------------------------------------
+if [ "$OVERLAY" = "aws-eks" ]; then
+  info "Installing Cluster Autoscaler..."
+
+  if ! command -v helm &>/dev/null; then
+    die "helm is required to install cluster-autoscaler. Install it first:
+  https://helm.sh/docs/intro/install/"
+  fi
+
+  CLUSTER_NAME="$(terraform -chdir="$REPO_ROOT/terraform/aws" output -raw cluster_name 2>/dev/null || true)"
+  AUTOSCALER_ROLE_ARN="$(terraform -chdir="$REPO_ROOT/terraform/aws" output -raw cluster_autoscaler_irsa_role_arn 2>/dev/null || true)"
+
+  if [[ -z "$CLUSTER_NAME" || -z "$AUTOSCALER_ROLE_ARN" ]]; then
+    warn "Could not resolve cluster_name/cluster_autoscaler_irsa_role_arn from terraform outputs. Skipping Cluster Autoscaler install."
+  else
+    helm repo add autoscaler https://kubernetes.github.io/autoscaler --force-update
+    helm repo update
+
+    helm upgrade --install cluster-autoscaler autoscaler/cluster-autoscaler \
+      --namespace kube-system --create-namespace \
+      --set cloudProvider=aws \
+      --set autoDiscovery.clusterName="$CLUSTER_NAME" \
+      --set awsRegion="$REGION" \
+      --set image.tag=v1.31.0 \
+      --set rbac.serviceAccount.create=true \
+      --set rbac.serviceAccount.name=cluster-autoscaler \
+      --set rbac.serviceAccount.annotations."eks\.amazonaws\.com/role-arn"="$AUTOSCALER_ROLE_ARN" \
+      --wait
+
+    ok "Cluster Autoscaler installed."
   fi
 fi
 
@@ -166,7 +207,7 @@ fi
 # 3. Create ClusterIssuers for Let's Encrypt
 # -------------------------------------------------------------------------
 # Determine ingress class for ACME solver
-if [ "$CLOUD" = "gcp" ]; then
+if [ "$CLOUD" = "gcp" ] || [ "$OVERLAY" = "aws-eks" ]; then
   INGRESS_CLASS="nginx"
 else
   INGRESS_CLASS="traefik"
@@ -275,6 +316,23 @@ if [[ -f "$SECRETS_FILE" ]]; then
   ok "Secret 'eve-app' created."
 else
   warn "Skipping (no secrets.env file)."
+fi
+
+# -------------------------------------------------------------------------
+# 6. Sync registry signing cert (required for aws-eks registry overlay)
+# -------------------------------------------------------------------------
+if [ "$OVERLAY" = "aws-eks" ]; then
+  REGISTRY_SIGNING_CERT_PATH="${REGISTRY_SIGNING_CERT_PATH:-/tmp/registry-signing.crt}"
+  if [[ -f "$REGISTRY_SIGNING_CERT_PATH" ]]; then
+    info "Syncing registry signing cert secret..."
+    kubectl create secret generic eve-registry-cert \
+      --from-file=cert.pem="$REGISTRY_SIGNING_CERT_PATH" \
+      --namespace="$NAMESPACE" \
+      --dry-run=client -o yaml | kubectl apply -f -
+    ok "Secret 'eve-registry-cert' created."
+  else
+    warn "Registry signing cert not found at ${REGISTRY_SIGNING_CERT_PATH}. Skipping eve-registry-cert secret."
+  fi
 fi
 
 # -------------------------------------------------------------------------
