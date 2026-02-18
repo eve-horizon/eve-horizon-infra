@@ -72,7 +72,9 @@ if ! blkid "$DEVICE" &>/dev/null; then
 fi
 
 mount "$DEVICE" /data/ollama
-echo "Mounted $DEVICE at /data/ollama"
+# Grow filesystem if volume was resized (no-op if already full size)
+resize2fs "$DEVICE" 2>/dev/null || true
+echo "Mounted $DEVICE at /data/ollama ($(df -h /data/ollama | awk 'NR==2{print $2}'))"
 
 # -----------------------------------------------------------------------------
 # 4. Install Ollama
