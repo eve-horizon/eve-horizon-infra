@@ -12,8 +12,8 @@
 #
 # Secrets required:
 #   KUBECONFIG       - Base64-encoded kubeconfig for the target cluster
+#   AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY - required for AWS EKS deploys and ECR registry login
 #   REGISTRY_TOKEN   - GitHub token with packages:read (required only for GHCR registries)
-#   AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY - required only for private ECR registries
 #   SLACK_WEBHOOK_URL - (optional) Slack incoming webhook for notifications
 # =============================================================================
 
@@ -72,15 +72,16 @@ jobs:
             OVERLAY="$CLOUD"
           fi
 
-          echo "version=$(yq '.platform.version' "$CONFIG")"   >> $GITHUB_OUTPUT
-          echo "registry=$(yq '.platform.registry' "$CONFIG")" >> $GITHUB_OUTPUT
-          echo "cloud=$CLOUD"                                   >> $GITHUB_OUTPUT
-          echo "overlay=$OVERLAY"                               >> $GITHUB_OUTPUT
-          echo "api_host=$(yq '.api_host' "$CONFIG")"          >> $GITHUB_OUTPUT
-          echo "domain=$(yq '.domain' "$CONFIG")"              >> $GITHUB_OUTPUT
-          echo "environment=$(yq '.environment' "$CONFIG")"    >> $GITHUB_OUTPUT
-          echo "name_prefix=$(yq '.name_prefix' "$CONFIG")"    >> $GITHUB_OUTPUT
-          echo "region=$(yq '.region' "$CONFIG")"              >> $GITHUB_OUTPUT
+          echo "version=$(yq '.platform.version' "$CONFIG")"      >> $GITHUB_OUTPUT
+          echo "registry=$(yq '.platform.registry' "$CONFIG")"    >> $GITHUB_OUTPUT
+          echo "cloud=$CLOUD"                                      >> $GITHUB_OUTPUT
+          echo "overlay=$OVERLAY"                                  >> $GITHUB_OUTPUT
+          echo "api_host=$(yq '.api_host' "$CONFIG")"             >> $GITHUB_OUTPUT
+          echo "domain=$(yq '.domain' "$CONFIG")"                 >> $GITHUB_OUTPUT
+          echo "environment=$(yq '.environment' "$CONFIG")"       >> $GITHUB_OUTPUT
+          echo "name_prefix=$(yq '.name_prefix' "$CONFIG")"       >> $GITHUB_OUTPUT
+          echo "compute_model=$(yq '.compute.model' "$CONFIG")"   >> $GITHUB_OUTPUT
+          echo "region=$(yq '.region' "$CONFIG")"                 >> $GITHUB_OUTPUT
 
       # -----------------------------------------------------------------------
       # Resolve effective version
@@ -129,24 +130,26 @@ jobs:
       # Configure kubeconfig
       # -----------------------------------------------------------------------
       - name: Configure kubeconfig (direct)
-        if: steps.config.outputs.cloud != 'gcp'
+        if: steps.config.outputs.compute_model != 'eks'
         run: |
           mkdir -p ~/.kube
           echo "${{ secrets.KUBECONFIG }}" | base64 -d > ~/.kube/config
           chmod 600 ~/.kube/config
 
-      - name: Authenticate to GCP
-        if: steps.config.outputs.cloud == 'gcp'
-        uses: google-github-actions/auth@v2
+      - name: Configure AWS credentials
+        if: steps.config.outputs.compute_model == 'eks'
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ steps.config.outputs.region }}
 
-      - name: Configure GKE kubeconfig
-        if: steps.config.outputs.cloud == 'gcp'
+      - name: Configure EKS kubeconfig
+        if: steps.config.outputs.compute_model == 'eks'
         run: |
-          gcloud container clusters get-credentials ${{ secrets.GKE_CLUSTER_NAME }} \
-            --zone ${{ secrets.GKE_ZONE }} \
-            --project ${{ secrets.GCP_PROJECT_ID }}
+          aws eks update-kubeconfig \
+            --name "${{ steps.config.outputs.name_prefix }}-cluster" \
+            --region "${{ steps.config.outputs.region }}"
 
       - name: Verify cluster connectivity
         run: |
@@ -157,7 +160,7 @@ jobs:
       # Login to container registry
       # -----------------------------------------------------------------------
       - name: Configure AWS credentials for ECR login
-        if: contains(steps.config.outputs.registry, '.dkr.ecr.')
+        if: contains(steps.config.outputs.registry, '.dkr.ecr.') && steps.config.outputs.compute_model != 'eks'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -188,25 +191,13 @@ jobs:
           OVERLAY_DIR="k8s/overlays/${OVERLAY}"
           echo "Updating image tags in ${OVERLAY_DIR} to version ${VERSION}"
 
-          shopt -s nullglob
-          PATCH_FILES=("${OVERLAY_DIR}"/*-patch.yaml)
-          if [[ ${#PATCH_FILES[@]} -eq 0 ]]; then
-            echo "No patch files found under ${OVERLAY_DIR}"
-            exit 1
-          fi
-
-          # Normalize service image references to the configured registry + version
-          # regardless of the previous host (GHCR, ECR Public, private ECR, etc).
-          for SERVICE in api gateway orchestrator worker agent-runtime; do
-            for PATCH_FILE in "${PATCH_FILES[@]}"; do
-              perl -0pi -e "s|image:\\s*[^\\s\"']*/${SERVICE}:[^\\s\"']+|image: ${REGISTRY}/${SERVICE}:${VERSION}|g" "$PATCH_FILE"
-            done
+          # Update all service image tags in patch files
+          for SERVICE in api gateway orchestrator worker agent-runtime sso; do
+            sed -i "s|${REGISTRY}/${SERVICE}:[^ \"]*|${REGISTRY}/${SERVICE}:${VERSION}|g" ${OVERLAY_DIR}/*-patch.yaml
           done
 
-          # Normalize EVE_RUNNER_IMAGE if present (supports worker and worker-full variants).
-          for PATCH_FILE in "${PATCH_FILES[@]}"; do
-            perl -0pi -e "s|value:\\s*\"?[^\"\\s]*/worker(-full)?:[^\"\\s]+\"?|value: \"${REGISTRY}/worker\\1:${VERSION}\"|g" "$PATCH_FILE"
-          done
+          # Also update the EVE_RUNNER_IMAGE env var in worker patch
+          sed -i "s|${REGISTRY}/worker-full:[^ \"]*|${REGISTRY}/worker-full:${VERSION}|g" ${OVERLAY_DIR}/*-patch.yaml
 
           echo "=== Updated patch files ==="
           grep -rn "image:" ${OVERLAY_DIR}/ || true
@@ -235,6 +226,32 @@ jobs:
           kubectl -n $NAMESPACE logs job/eve-db-migrate || true
 
       # -----------------------------------------------------------------------
+      # Bootstrap Supabase Auth DB Role (GoTrue)
+      # -----------------------------------------------------------------------
+      - name: Bootstrap auth DB role
+        env:
+          OVERLAY: ${{ steps.config.outputs.overlay }}
+        run: |
+          # Ensure bootstrap scripts ConfigMap exists (idempotent).
+          kubectl apply -f k8s/base/auth-bootstrap-configmap.yaml
+
+          # Delete any existing bootstrap job and re-run.
+          kubectl -n $NAMESPACE delete job auth-db-bootstrap --ignore-not-found
+          kubectl apply -f k8s/overlays/${OVERLAY}/auth-bootstrap-job.yaml
+
+          echo "Waiting for auth DB bootstrap to complete..."
+          if ! kubectl -n $NAMESPACE wait --for=condition=complete job/auth-db-bootstrap --timeout=120s; then
+            echo "=== Auth bootstrap logs (failure) ==="
+            kubectl -n $NAMESPACE logs job/auth-db-bootstrap || true
+            echo "=== Auth bootstrap describe (failure) ==="
+            kubectl -n $NAMESPACE describe job/auth-db-bootstrap || true
+            exit 1
+          fi
+
+          echo "=== Auth bootstrap logs ==="
+          kubectl -n $NAMESPACE logs job/auth-db-bootstrap || true
+
+      # -----------------------------------------------------------------------
       # Apply manifests
       # -----------------------------------------------------------------------
       - name: Apply manifests
@@ -258,7 +275,7 @@ jobs:
           DEPLOY_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           GIT_SHA="$(git rev-parse HEAD)"
 
-          for DEPLOY in eve-api eve-gateway eve-orchestrator eve-worker; do
+          for DEPLOY in eve-api eve-gateway eve-orchestrator eve-worker eve-sso; do
             kubectl -n $NAMESPACE annotate deployment/$DEPLOY --overwrite \
               eve-horizon.dev/version="${VERSION}" \
               eve-horizon.dev/git-sha="${GIT_SHA}" \
@@ -286,6 +303,9 @@ jobs:
 
       - name: Wait for Gateway rollout
         run: kubectl -n $NAMESPACE rollout status deployment/eve-gateway --timeout=180s
+
+      - name: Wait for SSO rollout
+        run: kubectl -n $NAMESPACE rollout status deployment/eve-sso --timeout=180s
 
       - name: Wait for Agent Runtime rollout
         run: kubectl -n $NAMESPACE rollout status statefulset/eve-agent-runtime --timeout=180s
@@ -322,7 +342,7 @@ jobs:
           kubectl -n $NAMESPACE get events --sort-by=.lastTimestamp | tail -n 50 || true
           echo ""
           echo "=== Deployment descriptions ==="
-          for DEPLOY in eve-api eve-gateway eve-orchestrator eve-worker; do
+          for DEPLOY in eve-api eve-gateway eve-orchestrator eve-worker eve-sso; do
             echo "--- $DEPLOY ---"
             kubectl -n $NAMESPACE describe deployment/$DEPLOY 2>/dev/null | tail -n 20 || true
           done
@@ -340,6 +360,7 @@ jobs:
           kubectl -n $NAMESPACE rollout undo deployment/eve-gateway || true
           kubectl -n $NAMESPACE rollout undo deployment/eve-orchestrator || true
           kubectl -n $NAMESPACE rollout undo deployment/eve-worker || true
+          kubectl -n $NAMESPACE rollout undo deployment/eve-sso || true
           kubectl -n $NAMESPACE rollout undo statefulset/eve-agent-runtime || true
 
       # -----------------------------------------------------------------------
