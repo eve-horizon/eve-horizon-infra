@@ -75,6 +75,7 @@ module "eks" {
   name_prefix           = var.name_prefix
   cluster_version       = "1.33"
   vpc_id                = module.network.vpc_id
+  vpc_cidr              = var.vpc_cidr
   public_subnet_ids     = module.network.public_subnet_ids
   private_subnet_ids    = module.network.private_subnet_ids
   admin_principal_arns  = var.eks_admin_principal_arns
