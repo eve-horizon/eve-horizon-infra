@@ -143,3 +143,31 @@ resource "aws_route_table_association" "private" {
   subnet_id      = aws_subnet.private[count.index].id
   route_table_id = aws_route_table.private[0].id
 }
+
+# -----------------------------------------------------------------------------
+# VPC Endpoints
+# -----------------------------------------------------------------------------
+
+data "aws_region" "current" {}
+
+# S3 Gateway endpoint — free, eliminates NAT data charges for S3 traffic
+resource "aws_vpc_endpoint" "s3" {
+  vpc_id       = aws_vpc.main.id
+  service_name = "com.amazonaws.${data.aws_region.current.name}.s3"
+
+  tags = {
+    Name = "${var.name_prefix}-s3-endpoint"
+  }
+}
+
+# Associate with both route tables so all subnets benefit
+resource "aws_vpc_endpoint_route_table_association" "s3_public" {
+  vpc_endpoint_id = aws_vpc_endpoint.s3.id
+  route_table_id  = aws_route_table.public.id
+}
+
+resource "aws_vpc_endpoint_route_table_association" "s3_private" {
+  count           = var.compute_model == "eks" ? 1 : 0
+  vpc_endpoint_id = aws_vpc_endpoint.s3.id
+  route_table_id  = aws_route_table.private[0].id
+}

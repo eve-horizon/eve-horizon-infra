@@ -73,7 +73,7 @@ module "eks" {
   source = "./modules/eks"
 
   name_prefix           = var.name_prefix
-  cluster_version       = "1.31"
+  cluster_version       = "1.33"
   vpc_id                = module.network.vpc_id
   public_subnet_ids     = module.network.public_subnet_ids
   private_subnet_ids    = module.network.private_subnet_ids

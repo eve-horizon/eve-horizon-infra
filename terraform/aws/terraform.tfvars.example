@@ -35,7 +35,7 @@ eks_default_min_size      = 1
 eks_default_max_size      = 2
 eks_default_desired_size  = 1
 
-eks_agents_instance_types = ["m6i.xlarge", "m5.xlarge"]
+eks_agents_instance_types = ["t3.large", "t3a.large"]
 eks_agents_min_size       = 0
 eks_agents_max_size       = 3
 eks_agents_desired_size   = 0

@@ -19,3 +19,7 @@ output "private_subnet_ids" {
   description = "IDs of the private subnets"
   value       = aws_subnet.private[*].id
 }
+
+output "s3_endpoint_id" {
+  value = aws_vpc_endpoint.s3.id
+}
