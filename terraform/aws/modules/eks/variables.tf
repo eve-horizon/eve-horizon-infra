@@ -64,7 +64,7 @@ variable "default_desired_size" {
 variable "agents_instance_types" {
   description = "Instance types for agents spot node group"
   type        = list(string)
-  default     = ["m6i.xlarge", "m5.xlarge"]
+  default     = ["t3.large", "t3.medium"]
 }
 
 variable "agents_min_size" {
@@ -76,7 +76,7 @@ variable "agents_min_size" {
 variable "agents_max_size" {
   description = "Maximum size for agents node group"
   type        = number
-  default     = 3
+  default     = 2
 }
 
 variable "agents_desired_size" {
@@ -88,7 +88,7 @@ variable "agents_desired_size" {
 variable "apps_instance_types" {
   description = "Instance types for apps spot node group"
   type        = list(string)
-  default     = ["t3.large", "t3.medium"]
+  default     = ["t3.medium", "t3.small"]
 }
 
 variable "apps_min_size" {
@@ -100,7 +100,7 @@ variable "apps_min_size" {
 variable "apps_max_size" {
   description = "Maximum size for apps node group"
   type        = number
-  default     = 5
+  default     = 2
 }
 
 variable "apps_desired_size" {

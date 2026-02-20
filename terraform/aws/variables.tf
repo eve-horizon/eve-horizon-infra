@@ -61,13 +61,13 @@ variable "allowed_ssh_cidrs" {
 variable "instance_type" {
   description = "EC2 instance type for the Eve Horizon server (legacy alias; prefer compute_type)"
   type        = string
-  default     = "m6i.xlarge"
+  default     = "t3.large"
 }
 
 variable "root_volume_size" {
   description = "Size in GB of the root EBS volume (legacy alias; prefer compute_disk_size_gb)"
   type        = number
-  default     = 50
+  default     = 30
 }
 
 variable "compute_type" {
@@ -119,7 +119,7 @@ variable "eks_default_desired_size" {
 variable "eks_agents_instance_types" {
   description = "Instance types for EKS agents spot node group"
   type        = list(string)
-  default     = ["m6i.xlarge", "m5.xlarge"]
+  default     = ["t3.large", "t3.medium"]
 }
 
 variable "eks_agents_min_size" {
@@ -131,7 +131,7 @@ variable "eks_agents_min_size" {
 variable "eks_agents_max_size" {
   description = "Maximum nodes for EKS agents spot node group"
   type        = number
-  default     = 3
+  default     = 2
 }
 
 variable "eks_agents_desired_size" {
@@ -143,7 +143,7 @@ variable "eks_agents_desired_size" {
 variable "eks_apps_instance_types" {
   description = "Instance types for EKS apps spot node group"
   type        = list(string)
-  default     = ["t3.large", "t3.medium"]
+  default     = ["t3.medium", "t3.small"]
 }
 
 variable "eks_apps_min_size" {
@@ -155,7 +155,7 @@ variable "eks_apps_min_size" {
 variable "eks_apps_max_size" {
   description = "Maximum nodes for EKS apps spot node group"
   type        = number
-  default     = 5
+  default     = 2
 }
 
 variable "eks_apps_desired_size" {

@@ -22,11 +22,11 @@ allowed_ssh_cidrs = ["0.0.0.0/0"]
 compute_model = "k3s"
 #
 # compute_type options (k3s mode):
-#   t3.large    - 2 vCPU / 8 GB
-#   m6i.xlarge  - 4 vCPU / 16 GB (recommended)
-#   m6i.2xlarge - 8 vCPU / 32 GB
-compute_type          = "m6i.xlarge"
-compute_disk_size_gb = 50
+#   t3.medium   - 2 vCPU / 4 GB  (minimal test)
+#   t3.large    - 2 vCPU / 8 GB  (small cluster default)
+#   m6i.xlarge  - 4 vCPU / 16 GB (production)
+compute_type          = "t3.large"
+compute_disk_size_gb = 30
 ssh_public_key       = "REPLACE_WITH_SSH_PUBLIC_KEY"
 
 # EKS node groups (used when compute_model = "eks")
@@ -35,14 +35,14 @@ eks_default_min_size      = 1
 eks_default_max_size      = 2
 eks_default_desired_size  = 1
 
-eks_agents_instance_types = ["t3.large", "t3a.large"]
+eks_agents_instance_types = ["t3.large", "t3.medium"]
 eks_agents_min_size       = 0
-eks_agents_max_size       = 3
+eks_agents_max_size       = 2
 eks_agents_desired_size   = 0
 
-eks_apps_instance_types = ["t3.large", "t3.medium"]
+eks_apps_instance_types = ["t3.medium", "t3.small"]
 eks_apps_min_size       = 0
-eks_apps_max_size       = 5
+eks_apps_max_size       = 2
 eks_apps_desired_size   = 0
 
 # Optional explicit admin principals for EKS access entries.

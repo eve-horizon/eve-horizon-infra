@@ -18,7 +18,7 @@ variable "security_group_ids" {
 variable "instance_type" {
   description = "EC2 instance type"
   type        = string
-  default     = "m6i.xlarge"
+  default     = "t3.large"
 }
 
 variable "root_volume_size" {
