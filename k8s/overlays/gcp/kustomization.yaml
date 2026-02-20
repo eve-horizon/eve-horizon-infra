@@ -27,3 +27,4 @@ patches:
   - path: remove-postgres-statefulset.yaml
   - path: remove-postgres-service.yaml
   - path: remove-postgres-secret.yaml
+  - path: remove-registry-resources.yaml

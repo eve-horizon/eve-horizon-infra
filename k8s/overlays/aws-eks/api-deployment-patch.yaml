@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: eve-api
+  namespace: eve
+spec:
+  template:
+    spec:
+      containers:
+        - name: api
+          env:
+            - name: EVE_REGISTRY_HOST
+              value: registry.eve.example.com
+            - name: EVE_REGISTRY_SIGNING_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: eve-app
+                  key: EVE_REGISTRY_SIGNING_KEY
+                  optional: true

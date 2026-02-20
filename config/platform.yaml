@@ -44,7 +44,7 @@ name_prefix: "eve-staging"              # [REQUIRED]
 
 # Cloud provider. Determines which Terraform root module and Kustomize
 # overlay are used during deployment.
-#   aws  - Amazon Web Services (EC2 + RDS + Route53 on k3s)
+#   aws  - Amazon Web Services (k3s on EC2 or EKS, plus RDS + Route53)
 #   gcp  - Google Cloud Platform (GKE + Cloud SQL + Cloud DNS)
 cloud: aws                              # [REQUIRED] aws | gcp
 
@@ -121,13 +121,20 @@ database:
 # -----------------------------------------------------------------------------
 
 compute:
+  # Compute model for AWS deployments:
+  #   k3s - Single EC2 host (simple, low cost)
+  #   eks - Managed EKS cluster with node pools/autoscaling
+  # Ignored on GCP.
+  model: k3s                           # [OPTIONAL] k3s | eks
+
   # Instance type for compute nodes.
-  #   AWS (EC2/k3s): t3.large, m6i.xlarge, m6i.2xlarge
-  #   GCP (GKE):     e2-standard-2, e2-standard-4, e2-standard-8
+  #   AWS k3s: t3.large, m6i.xlarge, m6i.2xlarge
+  #   AWS eks: default node group type (cluster-specific overrides may apply)
+  #   GCP:     e2-standard-2, e2-standard-4, e2-standard-8
   type: m6i.xlarge                      # [REQUIRED]
 
-  # Root disk size in GB. Must accommodate OS, k3s images, buildkit cache,
-  # and agent workspace volumes.
+  # Root disk size in GB (k3s only). Must accommodate OS, k3s images,
+  # buildkit cache, and agent workspace volumes.
   disk_size_gb: 50                      # [OPTIONAL] Minimum 30
 
 # -----------------------------------------------------------------------------
@@ -200,4 +207,4 @@ ollama:
 # Kustomize overlay directory. Defaults to the cloud provider name.
 # Maps to k8s/overlays/<overlay>/ for cloud-specific patches (ingress
 # annotations, image registry, managed database wiring, etc.).
-overlay: aws                            # [OPTIONAL] Defaults to value of `cloud`
+overlay: aws                            # [OPTIONAL] e.g. aws, aws-eks, gcp

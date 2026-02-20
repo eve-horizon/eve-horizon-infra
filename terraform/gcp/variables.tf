@@ -114,7 +114,7 @@ variable "default_node_min" {
 variable "default_node_max" {
   description = "Maximum nodes in default pool (autoscaler)"
   type        = number
-  default     = 3
+  default     = 2
 }
 
 # -----------------------------------------------------------------------------
@@ -124,7 +124,7 @@ variable "default_node_max" {
 variable "agent_node_machine_type" {
   description = "Machine type for the agent-runtime spot node pool"
   type        = string
-  default     = "e2-standard-4" # 4 vCPU, 16 GB — runs agent workloads
+  default     = "e2-standard-2" # 2 vCPU, 8 GB — runs agent workloads
 }
 
 variable "agent_node_min" {
@@ -136,7 +136,7 @@ variable "agent_node_min" {
 variable "agent_node_max" {
   description = "Maximum nodes in agent spot pool"
   type        = number
-  default     = 3
+  default     = 2
 }
 
 # -----------------------------------------------------------------------------
@@ -158,7 +158,7 @@ variable "apps_node_min" {
 variable "apps_node_max" {
   description = "Maximum nodes in apps spot pool"
   type        = number
-  default     = 5
+  default     = 2
 }
 
 # -----------------------------------------------------------------------------

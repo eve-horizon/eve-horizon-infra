@@ -19,17 +19,17 @@ allowed_api_cidrs = ["0.0.0.0/0"]       # CHANGE THIS — restrict K8s API acces
 # Default pool runs core services (API, Worker, Orchestrator, Gateway)
 compute_type = "e2-standard-2"  # 2 vCPU, 8 GB
 default_node_min = 1
-default_node_max = 3
+default_node_max = 2
 
 # Agent pool runs agent-runtime pods on spot VMs (60-90% cheaper)
-agent_node_machine_type = "e2-standard-4"    # 4 vCPU, 16 GB
+agent_node_machine_type = "e2-standard-2"    # 2 vCPU, 8 GB
 agent_node_min = 0                           # Scales to zero when idle
-agent_node_max = 3
+agent_node_max = 2
 
 # Apps pool runs user-deployed app services on spot VMs
 apps_node_machine_type = "e2-standard-2"     # 2 vCPU, 8 GB
 apps_node_min = 0                            # Scales to zero when idle
-apps_node_max = 5
+apps_node_max = 2
 
 compute_disk_size_gb = 50
 

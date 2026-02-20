@@ -15,18 +15,50 @@ vpc_cidr = "10.0.0.0/16"
 # CHANGE THIS — restrict to your IP/CIDR
 allowed_ssh_cidrs = ["0.0.0.0/0"]
 
-# --- Compute (single-node k3s host) ---
-# instance_type options:
-#   t3.large    - 2 vCPU / 8 GB
-#   m6i.xlarge  - 4 vCPU / 16 GB (recommended)
-#   m6i.2xlarge - 8 vCPU / 32 GB
-compute_type          = "m6i.xlarge"
-compute_disk_size_gb  = 50
-ssh_public_key  = "REPLACE_WITH_SSH_PUBLIC_KEY"
+# --- Compute ---
+# compute_model:
+#   k3s - single EC2 host
+#   eks - managed EKS cluster (default remains k3s for backward compatibility)
+compute_model = "k3s"
+#
+# compute_type options (k3s mode):
+#   t3.medium   - 2 vCPU / 4 GB  (minimal test)
+#   t3.large    - 2 vCPU / 8 GB  (small cluster default)
+#   m6i.xlarge  - 4 vCPU / 16 GB (production)
+compute_type          = "t3.large"
+compute_disk_size_gb = 30
+ssh_public_key       = "REPLACE_WITH_SSH_PUBLIC_KEY"
+
+# EKS node groups (used when compute_model = "eks")
+eks_default_instance_type = "t3.large"
+eks_default_min_size      = 1
+eks_default_max_size      = 2
+eks_default_desired_size  = 1
+
+eks_agents_instance_types = ["t3.large", "t3.medium"]
+eks_agents_min_size       = 0
+eks_agents_max_size       = 2
+eks_agents_desired_size   = 0
+
+eks_apps_instance_types = ["t3.medium", "t3.small"]
+eks_apps_min_size       = 0
+eks_apps_max_size       = 2
+eks_apps_desired_size   = 0
+
+# Optional explicit admin principals for EKS access entries.
+# If omitted, the apply caller identity receives admin access.
+# eks_admin_principal_arns = [
+#   "arn:aws:iam::123456789012:role/platform-admin",
+#   "arn:aws:iam::123456789012:user/adam",
+# ]
 
 # --- Domain / DNS ---
 domain          = "eve.example.com"
 route53_zone_id = "Z0123456789ABCDEFGHIJ"
+
+# EKS DNS alias targets (set after ingress NLB is provisioned)
+# ingress_lb_dns_name = "k8s-ingress-xxxx.eu-west-1.elb.amazonaws.com"
+# ingress_lb_zone_id  = "Z2IFOLAFXWLO4F"
 
 # --- Database (RDS PostgreSQL) ---
 db_name           = "eve"

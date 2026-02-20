@@ -24,4 +24,9 @@ resources:
   - gateway-deployment.yaml
   - gateway-service.yaml
   - gateway-ingress.yaml
+  - registry-configmap.yaml
+  - registry-serviceaccount.yaml
+  - registry-deployment.yaml
+  - registry-service.yaml
+  - registry-ingress.yaml
   - db-migrate-job.yaml

@@ -27,9 +27,15 @@ variable "name_prefix" {
 # -----------------------------------------------------------------------------
 
 variable "aws_region" {
-  description = "AWS region for all resources"
+  description = "AWS region for all resources (legacy alias; prefer region)"
   type        = string
   default     = "us-west-2"
+}
+
+variable "region" {
+  description = "Cloud region (canonical). Overrides aws_region when set."
+  type        = string
+  default     = null
 }
 
 # -----------------------------------------------------------------------------
@@ -53,15 +59,115 @@ variable "allowed_ssh_cidrs" {
 # -----------------------------------------------------------------------------
 
 variable "instance_type" {
-  description = "EC2 instance type for the Eve Horizon server"
+  description = "EC2 instance type for the Eve Horizon server (legacy alias; prefer compute_type)"
   type        = string
-  default     = "m6i.xlarge"
+  default     = "t3.large"
 }
 
 variable "root_volume_size" {
-  description = "Size in GB of the root EBS volume"
+  description = "Size in GB of the root EBS volume (legacy alias; prefer compute_disk_size_gb)"
   type        = number
-  default     = 50
+  default     = 30
+}
+
+variable "compute_type" {
+  description = "Compute class/type for primary nodes (canonical). Overrides instance_type when set."
+  type        = string
+  default     = null
+}
+
+variable "compute_model" {
+  description = "Compute model: k3s (single EC2) or eks (managed cluster)"
+  type        = string
+  default     = "k3s"
+  validation {
+    condition     = contains(["k3s", "eks"], var.compute_model)
+    error_message = "compute_model must be 'k3s' or 'eks'"
+  }
+}
+
+variable "compute_disk_size_gb" {
+  description = "Primary node disk size in GB (canonical). Overrides root_volume_size when set."
+  type        = number
+  default     = null
+}
+
+variable "eks_default_instance_type" {
+  description = "Instance type for EKS default node group"
+  type        = string
+  default     = "t3.large"
+}
+
+variable "eks_default_min_size" {
+  description = "Minimum nodes for EKS default node group"
+  type        = number
+  default     = 1
+}
+
+variable "eks_default_max_size" {
+  description = "Maximum nodes for EKS default node group"
+  type        = number
+  default     = 2
+}
+
+variable "eks_default_desired_size" {
+  description = "Desired nodes for EKS default node group"
+  type        = number
+  default     = 1
+}
+
+variable "eks_agents_instance_types" {
+  description = "Instance types for EKS agents spot node group"
+  type        = list(string)
+  default     = ["t3.large", "t3.medium"]
+}
+
+variable "eks_agents_min_size" {
+  description = "Minimum nodes for EKS agents spot node group"
+  type        = number
+  default     = 0
+}
+
+variable "eks_agents_max_size" {
+  description = "Maximum nodes for EKS agents spot node group"
+  type        = number
+  default     = 2
+}
+
+variable "eks_agents_desired_size" {
+  description = "Desired nodes for EKS agents spot node group"
+  type        = number
+  default     = 0
+}
+
+variable "eks_apps_instance_types" {
+  description = "Instance types for EKS apps spot node group"
+  type        = list(string)
+  default     = ["t3.medium", "t3.small"]
+}
+
+variable "eks_apps_min_size" {
+  description = "Minimum nodes for EKS apps spot node group"
+  type        = number
+  default     = 0
+}
+
+variable "eks_apps_max_size" {
+  description = "Maximum nodes for EKS apps spot node group"
+  type        = number
+  default     = 2
+}
+
+variable "eks_apps_desired_size" {
+  description = "Desired nodes for EKS apps spot node group"
+  type        = number
+  default     = 0
+}
+
+variable "eks_admin_principal_arns" {
+  description = "IAM principal ARNs granted admin cluster access via EKS access entries"
+  type        = list(string)
+  default     = []
 }
 
 variable "ssh_public_key" {
@@ -84,6 +190,18 @@ variable "route53_zone_id" {
   description = "Route53 hosted zone ID for your domain"
   type        = string
   # No default - must be explicitly set
+}
+
+variable "ingress_lb_dns_name" {
+  description = "Ingress load balancer DNS name for EKS alias records (set after ingress is provisioned)"
+  type        = string
+  default     = null
+}
+
+variable "ingress_lb_zone_id" {
+  description = "Ingress load balancer hosted zone ID for EKS alias records"
+  type        = string
+  default     = null
 }
 
 # -----------------------------------------------------------------------------
@@ -109,9 +227,15 @@ variable "db_password" {
 }
 
 variable "db_instance_class" {
-  description = "RDS instance class for PostgreSQL"
+  description = "RDS instance class for PostgreSQL (legacy alias; prefer database_instance_class)"
   type        = string
   default     = "db.t3.micro"
+}
+
+variable "database_instance_class" {
+  description = "Managed database instance class/tier (canonical). Overrides db_instance_class when set."
+  type        = string
+  default     = null
 }
 
 variable "deletion_protection" {
@@ -131,15 +255,27 @@ variable "ollama_enabled" {
 }
 
 variable "ollama_instance_type" {
-  description = "EC2 instance type for the Ollama GPU host (must have NVIDIA GPU)"
+  description = "EC2 instance type for the Ollama GPU host (legacy alias; prefer ollama_compute_type)"
   type        = string
   default     = "g5.xlarge"
 }
 
 variable "ollama_volume_size" {
-  description = "EBS volume size in GB for Ollama model storage"
+  description = "EBS volume size in GB for Ollama model storage (legacy alias; prefer ollama_disk_size_gb)"
   type        = number
   default     = 100
+}
+
+variable "ollama_compute_type" {
+  description = "Compute class/type for the Ollama host (canonical). Overrides ollama_instance_type when set."
+  type        = string
+  default     = null
+}
+
+variable "ollama_disk_size_gb" {
+  description = "Disk size in GB for Ollama model storage (canonical). Overrides ollama_volume_size when set."
+  type        = number
+  default     = null
 }
 
 variable "ollama_idle_timeout_minutes" {

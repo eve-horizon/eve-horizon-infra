@@ -4,13 +4,19 @@ resources:
   - ../../base
 namespace: eve
 patches:
-  - path: api-ingress-patch.yaml
+  - path: api-deployment-base-patch.yaml
   - path: api-deployment-patch.yaml
+  - path: agent-runtime-deployment-base-patch.yaml
   - path: agent-runtime-deployment-patch.yaml
-  - path: gateway-ingress-patch.yaml
   - path: gateway-deployment-patch.yaml
   - path: orchestrator-deployment-patch.yaml
+  - path: worker-deployment-base-patch.yaml
   - path: worker-deployment-patch.yaml
+  - path: api-ingress-patch.yaml
+  - path: gateway-ingress-patch.yaml
+  - path: registry-configmap-patch.yaml
+  - path: registry-serviceaccount-patch.yaml
+  - path: registry-ingress-patch.yaml
   # Delete db-migrate-job from kustomize build — it's a one-shot job
   # applied separately by the deploy workflow's migration step.
   - target:
@@ -25,4 +31,3 @@ patches:
   - path: remove-postgres-statefulset.yaml
   - path: remove-postgres-service.yaml
   - path: remove-postgres-secret.yaml
-  - path: remove-registry-resources.yaml

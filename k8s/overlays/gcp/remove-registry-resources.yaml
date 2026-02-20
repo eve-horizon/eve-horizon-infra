@@ -1,0 +1,34 @@
+$patch: delete
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: eve-registry-config
+  namespace: eve
+---
+$patch: delete
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: eve-registry
+  namespace: eve
+---
+$patch: delete
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: eve-registry
+  namespace: eve
+---
+$patch: delete
+apiVersion: v1
+kind: Service
+metadata:
+  name: eve-registry
+  namespace: eve
+---
+$patch: delete
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: eve-registry
+  namespace: eve

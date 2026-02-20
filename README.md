@@ -2,7 +2,7 @@
 
 Infrastructure-as-code template for deploying the [Eve Horizon](https://github.com/eve-horizon) platform. Create a private copy of this repo, fill in your configuration, and deploy a fully working Eve instance to your own cloud account.
 
-**Current cloud support:** AWS with dual compute models (`k3s` single-node and `eks` managed cluster)
+**Current cloud support:** AWS (`compute.model: k3s` or `compute.model: eks`) and GCP (GKE + Cloud SQL + Cloud DNS)
 
 ## Prerequisites
 
@@ -10,10 +10,11 @@ Infrastructure-as-code template for deploying the [Eve Horizon](https://github.c
 |------|---------|---------|
 | [Terraform](https://developer.hashicorp.com/terraform/install) | >= 1.5 | Provision cloud infrastructure |
 | [kubectl](https://kubernetes.io/docs/tasks/tools/) | >= 1.28 | Interact with the Kubernetes cluster |
-| [Helm](https://helm.sh/docs/intro/install/) | v3 | Install cert-manager, ingress, and autoscaler charts |
+| [Helm](https://helm.sh/docs/intro/install/) | v3 | Install cert-manager |
 | [gh](https://cli.github.com/) | any | GitHub CLI (for automated upgrade PRs) |
 | bash | 4+ | Run `eve-infra` and setup scripts |
-| AWS CLI | v2 | Configure credentials for Terraform |
+| AWS CLI | v2 | Configure credentials for AWS deployments |
+| [gcloud CLI](https://cloud.google.com/sdk/docs/install) | latest | Configure credentials for GCP deployments |
 
 ## Quick Start
 
@@ -24,16 +25,16 @@ gh repo create my-org/eve-infra --template eve-horizon/eve-horizon-infra --priva
 # 2. Configure
 cp config/secrets.env.example config/secrets.env
 #    Edit config/platform.yaml  -- set domain, region, compute, etc.
-#    Edit config/secrets.env    -- set API keys + DB/app secrets
+#    Edit config/secrets.env    -- set API keys, DB password, registry creds
 
 # 3. Provision cloud resources
-cp terraform/aws/terraform.tfvars.example terraform/aws/terraform.tfvars
+#    Uses cloud from config/platform.yaml (aws|gcp)
+CLOUD="$(grep '^cloud:' config/platform.yaml | awk '{print $2}')"
+cp "terraform/${CLOUD}/terraform.tfvars.example" "terraform/${CLOUD}/terraform.tfvars"
 #    Edit terraform.tfvars with values matching platform.yaml
-#    Set compute_model = "k3s" or compute_model = "eks"
-cd terraform/aws && terraform init && terraform apply
-
-#    If using compute_model = "eks", run a second apply for DNS alias
-#    after ingress-nginx provisions the NLB (see DEPLOYMENT.md).
+#    AWS EKS mode: set compute.model=eks and overlay=aws-eks in platform.yaml
+terraform -chdir="terraform/${CLOUD}" init
+terraform -chdir="terraform/${CLOUD}" apply
 
 # 4. Set up the cluster (cert-manager, secrets, registry)
 ./scripts/setup.sh
@@ -60,21 +61,26 @@ eve-horizon-infra/
 ├── k8s/
 │   ├── base/                  # Kustomize base manifests (all services)
 │   └── overlays/
-│       ├── aws/               # AWS k3s patches
-│       └── aws-eks/           # AWS EKS patches (nginx ingress, registry IRSA, scheduling)
+│       ├── aws/               # AWS-specific patches (k3s + RDS wiring)
+│       ├── aws-eks/           # AWS EKS patches (nginx ingress + registry)
+│       └── gcp/               # GCP-specific patches (GKE + Cloud SQL wiring)
 ├── terraform/
-│   └── aws/                   # Terraform root module
+│   ├── aws/                   # AWS root module (k3s or EKS, RDS, Route53)
+│   │   ├── providers.tf
+│   │   ├── main.tf
+│   │   ├── variables.tf
+│   │   ├── outputs.tf
+│   │   ├── backend.tf.example
+│   │   ├── terraform.tfvars.example
+│   │   └── modules/
+│   └── gcp/                   # GCP root module (GKE, Cloud SQL, Cloud DNS)
+│       ├── providers.tf
 │       ├── main.tf
 │       ├── variables.tf
 │       ├── outputs.tf
+│       ├── backend.tf.example
 │       ├── terraform.tfvars.example
 │       └── modules/
-│           ├── network/       # VPC, subnets, routing
-│           ├── security/      # Security groups, SSH key pair
-│           ├── ec2/           # k3s server instance
-│           ├── eks/           # EKS control plane, node groups, addons, IRSA
-│           ├── rds/           # Managed PostgreSQL
-│           └── dns/           # Route53 records
 └── .github/workflows/
     ├── deploy.yml             # Push-to-deploy (tag, manual, or dispatch)
     ├── health-check.yml       # Scheduled health monitoring (every 30 min)
@@ -87,11 +93,7 @@ All deployment settings live in **`config/platform.yaml`** -- a single, well-com
 
 Secrets live in **`config/secrets.env`** (git-ignored). See `config/secrets.env.example` for every required and optional key.
 
-For Terraform variables, copy `terraform/aws/terraform.tfvars.example` to `terraform/aws/terraform.tfvars` and fill in values that match your `platform.yaml`.
-
-Set `compute.model` in `config/platform.yaml` and `compute_model` in `terraform/aws/terraform.tfvars` consistently:
-- `k3s`: single EC2 host, simpler and lower cost
-- `eks`: managed control plane, node pools/autoscaling, two-pass DNS cutover
+For Terraform variables, copy `terraform/<cloud>/terraform.tfvars.example` to `terraform/<cloud>/terraform.tfvars` and fill in values that match your `platform.yaml`.
 
 ## CLI Reference
 
@@ -119,20 +121,12 @@ eve-infra restart <service>   # Rolling restart
 
 Run `bin/eve-infra --help` for the complete reference.
 
-## Kube Context Safety
-
-This repo is now guarded against accidental cross-repo/staging mutations:
+Safety guardrails:
 - Canonical kubeconfig is `config/kubeconfig.yaml` (repo-local single source of truth).
 - `bin/eve-infra` and `scripts/setup.sh` force this kubeconfig path and ignore external `KUBECONFIG` values.
 - For `cloud: aws` + `compute.model: eks`, context must match `<name_prefix>-cluster` (or ARN context ending in that cluster).
 - Use `eve-infra kubeconfig refresh` to regenerate and `eve-infra kubeconfig doctor` to verify.
-- Emergency override (break-glass only): `EVE_KUBE_GUARD_BYPASS=1`.
-
-Recommended per-repo isolation:
-```bash
-# .envrc (via direnv), repo-local profile isolation
-export AWS_PROFILE=incept5-staging
-```
+- Emergency override: `EVE_KUBE_GUARD_BYPASS=1` (intended only for explicit break-glass use).
 
 ## Further Reading
 
