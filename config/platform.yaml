@@ -19,12 +19,10 @@
 platform:
   # Pinned Eve platform version. All service images are pulled at this tag.
   # Bump this to upgrade the entire platform in lockstep.
-  version: "0.1.28"
-
+  version: "0.1.139"
   # Container image registry. All Eve images live under this namespace.
   # Default points to the public ECR mirror for anonymous pulls.
-  registry: "public.ecr.aws/w7c4v0w3/eve-horizon"      # [OPTIONAL] Override for GHCR/private mirrors
-
+  registry: "public.ecr.aws/w7c4v0w3/eve-horizon" # [OPTIONAL] Override for GHCR/private mirrors
 # -----------------------------------------------------------------------------
 # Environment
 # -----------------------------------------------------------------------------
@@ -32,12 +30,10 @@ platform:
 # Human-readable environment name, used for resource tagging and log context.
 # Common values: staging, production, dev
 environment: "staging"
-
 # Unique prefix for cloud resource names (prevents collisions when running
 # multiple Eve instances in the same cloud account).
 # Example: "eve-staging", "acme-eve-prod"
-name_prefix: "eve-staging"              # [REQUIRED]
-
+name_prefix: "eve-staging" # [REQUIRED]
 # -----------------------------------------------------------------------------
 # Cloud & Region
 # -----------------------------------------------------------------------------
@@ -46,160 +42,126 @@ name_prefix: "eve-staging"              # [REQUIRED]
 # overlay are used during deployment.
 #   aws  - Amazon Web Services (k3s on EC2 or EKS, plus RDS + Route53)
 #   gcp  - Google Cloud Platform (GKE + Cloud SQL + Cloud DNS)
-cloud: aws                              # [REQUIRED] aws | gcp
-
+cloud: aws # [REQUIRED] aws | gcp
 # --- GCP-specific (required when cloud: gcp) ---
 # gcp_project_id: ""                    # [REQUIRED for GCP] GCP project ID
 # dns_zone_name: ""                     # [REQUIRED for GCP] Cloud DNS zone name
 
 # Cloud region where all resources are provisioned.
-region: eu-west-1                       # [REQUIRED] e.g. us-west-2, eu-west-1
-
+region: eu-west-1 # [REQUIRED] e.g. us-west-2, eu-west-1
 # -----------------------------------------------------------------------------
 # Domain Configuration
 # -----------------------------------------------------------------------------
 
 # Base domain for the Eve Horizon instance. DNS records are created
 # automatically via the cloud provider's DNS service (Route53, Cloud DNS).
-domain: eve.example.com                 # [REQUIRED] Your registered domain
-
+domain: eve.example.com # [REQUIRED] Your registered domain
 # API endpoint. The Eve API and gateway ingress are served from this host.
 # Convention: api.<domain>
-api_host: api.eve.example.com           # [REQUIRED] Must resolve to the server
-
+api_host: api.eve.example.com # [REQUIRED] Must resolve to the server
 # Wildcard domain for apps deployed by Eve (build & deploy pipeline).
 # Eve creates <app-slug>.<app_domain> subdomains for each deployed app.
-app_domain: apps.example.com            # [REQUIRED] Wildcard DNS recommended
-
+app_domain: apps.example.com # [REQUIRED] Wildcard DNS recommended
 # Route53 hosted zone ID (AWS-specific). Required when cloud: aws.
 # Find it in AWS Console > Route53 > Hosted Zones.
-route53_zone_id: ""                     # [REQUIRED for AWS] e.g. Z0123456789ABC
-
+route53_zone_id: "" # [REQUIRED for AWS] e.g. Z0123456789ABC
 # -----------------------------------------------------------------------------
 # TLS
 # -----------------------------------------------------------------------------
-
 tls:
   # TLS certificate provider. cert-manager is installed automatically on k3s.
-  provider: cert-manager                # [OPTIONAL] cert-manager | none
-
+  provider: cert-manager # [OPTIONAL] cert-manager | none
   # ClusterIssuer name. "letsencrypt-prod" uses the ACME production endpoint.
   # Use "letsencrypt-staging" for testing to avoid rate limits.
-  issuer: letsencrypt-prod              # [OPTIONAL] letsencrypt-prod | letsencrypt-staging
-
+  issuer: letsencrypt-prod # [OPTIONAL] letsencrypt-prod | letsencrypt-staging
   # Email address for Let's Encrypt registration and expiry notifications.
-  email: ops@example.com                # [REQUIRED when provider=cert-manager]
-
+  email: ops@example.com # [REQUIRED when provider=cert-manager]
 # -----------------------------------------------------------------------------
 # Database
 # -----------------------------------------------------------------------------
-
 database:
   # Database provider.
   #   rds       - AWS RDS managed PostgreSQL (provisioned by Terraform)
   #   cloud-sql - GCP Cloud SQL managed PostgreSQL (provisioned by Terraform)
   #   in-cluster - Dev-only PostgreSQL StatefulSet inside k3s
   #   external  - Bring your own PostgreSQL (set DATABASE_URL in secrets.env)
-  provider: rds                         # [REQUIRED] rds | cloud-sql | in-cluster | external
-
+  provider: rds # [REQUIRED] rds | cloud-sql | in-cluster | external
   # Cloud-specific instance class. Ignored when provider is "external".
   #   db.t3.micro  : 1 vCPU, 1 GB RAM  - free tier, dev/staging
   #   db.t3.small  : 1 vCPU, 2 GB RAM  - light staging
   #   db.t3.medium : 2 vCPU, 4 GB RAM  - production
-  instance_class: db.t3.micro           # [OPTIONAL]
-
+  instance_class: db.t3.micro # [OPTIONAL]
   # Database name and default admin user.
-  name: eve                             # [OPTIONAL] PostgreSQL database name
-  username: eve                         # [OPTIONAL] PostgreSQL admin username
-
+  name: eve # [OPTIONAL] PostgreSQL database name
+  username: eve # [OPTIONAL] PostgreSQL admin username
   # Enable deletion protection on the managed database instance.
   # Always true in production to prevent accidental data loss.
-  deletion_protection: false            # [OPTIONAL] true for production
-
+  deletion_protection: false # [OPTIONAL] true for production
 # -----------------------------------------------------------------------------
 # Compute
 # -----------------------------------------------------------------------------
-
 compute:
   # Compute model for AWS deployments:
   #   k3s - Single EC2 host (simple, low cost)
   #   eks - Managed EKS cluster with node pools/autoscaling
   # Ignored on GCP.
-  model: k3s                           # [OPTIONAL] k3s | eks
-
+  model: k3s # [OPTIONAL] k3s | eks
   # Instance type for compute nodes.
   #   AWS k3s: t3.large, m6i.xlarge, m6i.2xlarge
   #   AWS eks: default node group type (cluster-specific overrides may apply)
   #   GCP:     e2-standard-2, e2-standard-4, e2-standard-8
-  type: m6i.xlarge                      # [REQUIRED]
-
+  type: m6i.xlarge # [REQUIRED]
   # Root disk size in GB (k3s only). Must accommodate OS, k3s images,
   # buildkit cache, and agent workspace volumes.
-  disk_size_gb: 50                      # [OPTIONAL] Minimum 30
-
+  disk_size_gb: 50 # [OPTIONAL] Minimum 30
 # -----------------------------------------------------------------------------
 # Network & Access Control
 # -----------------------------------------------------------------------------
-
 network:
   # VPC CIDR block (AWS). Ignored for non-AWS providers.
-  vpc_cidr: "10.0.0.0/16"              # [OPTIONAL]
-
+  vpc_cidr: "10.0.0.0/16" # [OPTIONAL]
   # CIDR blocks allowed to SSH to the server and access the k3s API.
   # Use /32 for a single IP.  Find yours: curl -s https://checkip.amazonaws.com
-  allowed_ssh_cidrs:                    # [REQUIRED]
-    - "0.0.0.0/0"                       # CHANGE THIS - restrict to your IP
-
+  allowed_ssh_cidrs: # [REQUIRED]
+    - "0.0.0.0/0" # CHANGE THIS - restrict to your IP
 # SSH public key for server access.
 # Generate: ssh-keygen -t ed25519 -f ~/.ssh/eve-server
-ssh_public_key: ""                      # [REQUIRED] Contents of your .pub file
-
+ssh_public_key: "" # [REQUIRED] Contents of your .pub file
 # -----------------------------------------------------------------------------
 # Observability (optional)
 # -----------------------------------------------------------------------------
-
 observability:
   # Enable OpenTelemetry sidecar collection for all Eve services.
-  otel_enabled: false                   # [OPTIONAL]
-
+  otel_enabled: false # [OPTIONAL]
   # OTLP exporter endpoint (gRPC or HTTP).
   # When otel_enabled is true, all services send traces and metrics here.
-  otel_endpoint: "http://otel-collector.eve.svc.cluster.local:4318"  # [OPTIONAL]
-
+  otel_endpoint: "http://otel-collector.eve.svc.cluster.local:4318" # [OPTIONAL]
 # -----------------------------------------------------------------------------
 # Agent Runtime
 # -----------------------------------------------------------------------------
-
 agent_runtime:
   # Number of agent-runtime StatefulSet replicas.
   # Each replica can handle `capacity` concurrent agent sessions.
-  replicas: 3                           # [OPTIONAL] Default 3
-
+  replicas: 3 # [OPTIONAL] Default 3
   # Max concurrent agent sessions per replica.
-  capacity: 8                           # [OPTIONAL] Default 8
-
+  capacity: 8 # [OPTIONAL] Default 8
 # -----------------------------------------------------------------------------
 # Ollama GPU Inference (optional)
 # -----------------------------------------------------------------------------
-
 ollama:
   # Enable on-demand GPU inference via Ollama.
   # Provisions a spot GPU instance that starts automatically when the API
   # receives an inference request and stops after idle timeout.
-  enabled: false                              # [OPTIONAL] Set true to enable
-
+  enabled: false # [OPTIONAL] Set true to enable
   # GPU instance type. Must be NVIDIA GPU-equipped.
   #   g6.xlarge  : 1x L4,  24 GB VRAM, ~$0.25/hr spot  (recommended)
   #   g5.xlarge  : 1x A10G, 24 GB VRAM, ~$0.30/hr spot
   #   g6.2xlarge : 1x L4,  24 GB VRAM, 8 vCPU, 32 GB RAM
-  instance_type: g6.xlarge                    # [OPTIONAL]
-
+  instance_type: g6.xlarge # [OPTIONAL]
   # Persistent disk for model weights (survives stop/start).
-  disk_size_gb: 100                           # [OPTIONAL]
-
+  disk_size_gb: 100 # [OPTIONAL]
   # Auto-stop after this many minutes of no inference requests.
-  idle_timeout_minutes: 30                    # [OPTIONAL]
-
+  idle_timeout_minutes: 30 # [OPTIONAL]
 # -----------------------------------------------------------------------------
 # Overlay Selection
 # -----------------------------------------------------------------------------
@@ -207,4 +169,4 @@ ollama:
 # Kustomize overlay directory. Defaults to the cloud provider name.
 # Maps to k8s/overlays/<overlay>/ for cloud-specific patches (ingress
 # annotations, image registry, managed database wiring, etc.).
-overlay: aws                            # [OPTIONAL] e.g. aws, aws-eks, gcp
+overlay: aws # [OPTIONAL] e.g. aws, aws-eks, gcp
