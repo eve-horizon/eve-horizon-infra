@@ -93,9 +93,9 @@ Set at minimum:
 
 - `EVE_SECRETS_MASTER_KEY`, `EVE_INTERNAL_API_KEY`, `EVE_BOOTSTRAP_TOKEN`
 - `DATABASE_URL` -- constructed from Terraform output after provisioning (see step 4)
-- `GHCR_USERNAME` + `GHCR_TOKEN` -- GitHub PAT with `read:packages` scope
-- `ANTHROPIC_API_KEY` and/or `OPENAI_API_KEY` -- at least one LLM provider
 - `GITHUB_TOKEN` -- PAT with `repo`, `read:org` scopes
+
+LLM provider keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, etc.) are managed via the Eve CLI after bootstrap, not as cluster secrets.
 
 **Never commit `secrets.env`.** It is already in `.gitignore`.
 
@@ -308,43 +308,24 @@ gcloud compute ssh --project=<project> --zone=<zone> <node-name>  # if cloud=gcp
 
 ---
 
-## CI/CD Workflows
+## Deploying Updates
 
-Three GitHub Actions workflows are included:
+Deploys are run locally via the CLI. The process is zero-downtime -- new pods are created and pass health checks before old pods terminate.
 
-### Deploy Workflow (`.github/workflows/deploy.yml`)
+```bash
+bin/eve-infra version              # Check for new upstream releases
+bin/eve-infra upgrade <version>    # Bump config + all image refs
+git diff                           # Review
+git add -A && git commit -m "chore: upgrade eve platform to <version>"
+bin/eve-infra deploy               # Zero-downtime rollout
+bin/eve-infra health               # Verify
+```
 
-Deploys Eve to the cluster. Triggered by:
+See [UPGRADE.md](UPGRADE.md) for the full upgrade guide, including zero-downtime rollout details, breaking change handling, and rollback procedures.
 
-- **Tag push:** `deploy-v0.1.28` -- extracts version from the tag
-- **Manual dispatch:** run from GitHub Actions UI, optionally specify a version
-- **Repository dispatch:** `type: deploy` with `version` in the payload (for cross-repo CI)
-
-Required GitHub secrets:
-- `KUBECONFIG` -- required for direct kubeconfig mode (AWS/custom overlays)
-- `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` -- required for AWS EKS deploy mode
-- `GCP_SA_KEY`, `GCP_PROJECT_ID`, `GKE_CLUSTER_NAME`, `GKE_ZONE` -- required for GCP deploys
-- `REGISTRY_TOKEN` -- GitHub PAT with `read:packages` scope
-- `SLACK_WEBHOOK_URL` -- (optional) for deploy notifications
-
-The workflow runs migrations, applies manifests, waits for rollouts, runs a health check, and auto-rolls-back on failure.
-
-Local safety guardrails:
-- `bin/eve-infra` and `scripts/setup.sh` now validate active kube context before mutating operations.
-- Use `EVE_KUBE_GUARD_BYPASS=1` only for intentional break-glass operations.
-
-### Health Check Workflow (`.github/workflows/health-check.yml`)
-
-Runs every 30 minutes. Hits `https://<api_host>/health` with 3 retries. On failure:
-- Creates a GitHub issue (or comments on an existing open one to avoid duplicates)
-- Sends a Slack notification (if `SLACK_WEBHOOK_URL` is configured)
-
-### Upgrade Check Workflow (`.github/workflows/upgrade-check.yml`)
-
-Runs daily at 08:00 UTC. Queries the container registry for the latest semver tag. If a newer version is available, opens a PR that bumps `config/platform.yaml`. Avoids duplicate PRs.
-
-Required GitHub secrets:
-- `REGISTRY_TOKEN` -- GitHub PAT with `read:packages` scope
+Safety guardrails:
+- `bin/eve-infra` validates the active kube context before mutating operations
+- Use `EVE_KUBE_GUARD_BYPASS=1` only for intentional break-glass operations
 
 ---
 
@@ -383,21 +364,17 @@ If `observability.otel_enabled` is set to `true` in `platform.yaml`, all Eve ser
 
 ### Pods stuck in ImagePullBackOff
 
-The cluster cannot pull images from `ghcr.io/eve-horizon`.
+The cluster cannot pull images from `public.ecr.aws`.
 
 ```bash
-# Check the registry secret exists
-kubectl get secret eve-registry -n eve
-
-# If missing, re-run setup or create manually
-kubectl create secret docker-registry eve-registry \
-  --docker-server=ghcr.io \
-  --docker-username=<your-username> \
-  --docker-password=<your-token> \
-  -n eve
+# Check pod events for the exact error
+kubectl describe pod <pod-name> -n eve | grep -A5 "Events"
 ```
 
-Verify your `GHCR_TOKEN` has `read:packages` scope and has not expired.
+Common causes:
+- Image tag doesn't exist (check `config/platform.yaml` version matches a published release)
+- Network issue reaching ECR public registry
+- If using a private registry, check the `eve-registry` pull secret exists
 
 ### Pods stuck in CrashLoopBackOff
 

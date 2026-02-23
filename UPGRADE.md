@@ -5,8 +5,8 @@ How to upgrade your Eve Horizon deployment to a new platform version.
 ## Table of Contents
 
 - [Checking for New Versions](#checking-for-new-versions)
-- [Upgrade Steps (Manual)](#upgrade-steps-manual)
-- [Upgrade Steps (Automated)](#upgrade-steps-automated)
+- [Upgrade Steps](#upgrade-steps)
+- [Zero-Downtime Rollout](#zero-downtime-rollout)
 - [Handling Breaking Changes](#handling-breaking-changes)
 - [Rollback](#rollback)
 
@@ -20,24 +20,18 @@ How to upgrade your Eve Horizon deployment to a new platform version.
 bin/eve-infra version
 ```
 
-This shows your current pinned version and queries the container registry for the latest available tag. If a newer version exists, it tells you the exact command to upgrade.
-
-### From GitHub Actions
-
-The **Upgrade Check** workflow (`.github/workflows/upgrade-check.yml`) runs daily at 08:00 UTC. If a newer version is found, it automatically opens a pull request that bumps `config/platform.yaml`.
-
-You can also trigger it manually from the GitHub Actions tab.
+This shows your current pinned version and queries GitHub for the latest upstream release tag (`release-v*` on `Incept5/eve-horizon`). Uses `gh api` if available, falls back to `git ls-remote`. If a newer version exists, it tells you the exact command to upgrade.
 
 ### Manually
 
-Check the registry configured in `config/platform.yaml` for available tags:
+Check the upstream repository for release tags:
 
-- Public ECR (default): `https://gallery.ecr.aws/w7c4v0w3/eve-horizon/api`
-- GHCR mirror: `https://github.com/orgs/eve-horizon/packages`
+- GitHub tags: `https://github.com/Incept5/eve-horizon/tags`
+- ECR gallery: `https://gallery.ecr.aws/w7c4v0w3/eve-horizon/api`
 
 ---
 
-## Upgrade Steps (Manual)
+## Upgrade Steps
 
 ### 1. Update Configuration
 
@@ -47,7 +41,7 @@ bin/eve-infra upgrade 0.2.0
 
 This single command:
 - Updates `platform.version` in `config/platform.yaml`
-- Updates all image tags in `k8s/overlays/<cloud>/*-patch.yaml`
+- Updates all image tags in `k8s/overlays/<cloud>/*-patch.yaml`, including env var refs like `EVE_RUNNER_IMAGE`
 
 ### 2. Review Changes
 
@@ -66,23 +60,13 @@ git commit -m "chore: upgrade eve platform to 0.2.0"
 
 ### 4. Deploy
 
-**Option A -- Deploy locally:**
-
 ```bash
 bin/eve-infra deploy
 bin/eve-infra db migrate    # Run if the release includes schema changes
 bin/eve-infra health
 ```
 
-**Option B -- Deploy via CI:**
-
-```bash
-git push origin main
-git tag deploy-v0.2.0
-git push origin deploy-v0.2.0
-```
-
-The deploy workflow handles migrations, rollout, health checks, and automatic rollback on failure.
+The deploy applies manifests via kustomize, then waits for all rollouts to complete. See [Zero-Downtime Rollout](#zero-downtime-rollout) for how this works without service interruption.
 
 ### 5. Verify
 
@@ -94,30 +78,46 @@ bin/eve-infra logs api      # Watch for errors
 
 ---
 
-## Upgrade Steps (Automated)
+## Zero-Downtime Rollout
 
-The automated flow requires no manual intervention for routine version bumps:
+All deployments are configured for zero-downtime upgrades using Kubernetes rolling updates.
 
-1. The **Upgrade Check** workflow detects a new version and opens a PR
-2. Review the PR (it shows current vs. new version)
-3. Merge the PR
-4. Trigger a deploy:
-   - Push a tag: `git tag deploy-v<version> && git push origin deploy-v<version>`
-   - Or run the Deploy workflow manually from the Actions tab
-5. The deploy workflow runs migrations, applies manifests, waits for rollouts, runs health checks, and rolls back automatically if anything fails
+### How It Works
 
-### Setting Up Automated Deploys
-
-To make the flow fully automated (merge PR triggers deploy), add a `push` trigger to `.github/workflows/deploy.yml`:
+Each Deployment has:
 
 ```yaml
-on:
-  push:
-    branches: [main]
-    paths: ['config/platform.yaml']
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxSurge: 1        # Create 1 new pod before killing the old one
+    maxUnavailable: 0  # Never take down the old pod until the new one is ready
 ```
 
-This triggers a deploy whenever `platform.yaml` changes on `main` -- which is exactly what the upgrade PR does.
+The rollout sequence:
+
+1. Kubernetes creates a new pod alongside the existing one (`maxSurge: 1`)
+2. The new pod pulls the updated image and starts
+3. Kubernetes waits for the readiness probe (`/health`) to pass
+4. Once ready, the old pod receives SIGTERM
+5. A `preStop` hook (`sleep 5`) runs first, giving the endpoints controller time to remove the old pod from the Service -- this prevents in-flight requests from hitting a terminating pod
+6. After the sleep, the process receives SIGTERM and shuts down gracefully
+7. The old pod terminates within `terminationGracePeriodSeconds`
+
+With `replicas: 1`, this means zero gap -- the new pod serves traffic before the old one dies.
+
+### Grace Periods
+
+| Service | terminationGracePeriodSeconds | Why |
+|---------|-------------------------------|-----|
+| api, gateway, orchestrator | 30s | Standard HTTP request draining |
+| worker | 60s | Longer window for job dispatch draining |
+| agent-runtime (StatefulSet) | 30s | Uses `updateStrategy: RollingUpdate` |
+
+### What's Not Included (Yet)
+
+- **PodDisruptionBudgets** -- with `replicas: 1`, PDBs would block node drains. Add when scaling to 2+.
+- **Multiple replicas** -- `maxSurge: 1` + `maxUnavailable: 0` already gives zero-downtime with 1 replica.
 
 ---
 
@@ -139,7 +139,6 @@ If a new version introduces new fields in `platform.yaml`:
 
 ```bash
 # Compare your config against the template from the new version
-# Look for new [REQUIRED] fields
 diff config/platform.yaml <(curl -sf https://raw.githubusercontent.com/eve-horizon/eve-horizon-infra/main/config/platform.yaml)
 ```
 
@@ -214,27 +213,12 @@ bin/eve-infra deploy
 bin/eve-infra health
 ```
 
-### CI Rollback
-
-If you deployed via the deploy workflow:
-
-1. The workflow automatically rolls back all services on failure
-2. For a manual CI rollback, run the Deploy workflow from the Actions tab and specify the old version in the input field
-
 ### Database Rollback
 
 Eve migrations are forward-only. If a migration introduced a breaking schema change and you need to roll back:
 
 1. Restore from a database backup (see `bin/eve-infra db backup` for provider-specific instructions)
 2. Then roll back the application version as described above
-
-For RDS:
-
-```bash
-aws rds restore-db-instance-from-db-snapshot \
-  --db-instance-identifier <instance-id>-restored \
-  --db-snapshot-identifier <snapshot-id>
-```
 
 ### Verifying a Rollback
 
