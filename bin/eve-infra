@@ -255,33 +255,37 @@ cmd_version() {
   echo -e "${BOLD}Registry:${RESET}        ${registry}"
   echo ""
 
-  # Attempt to query ghcr.io for the latest tag.
-  # This uses the OCI distribution API and requires no authentication for
-  # public packages, but will gracefully degrade if unavailable.
-  if command -v curl &>/dev/null; then
-    info "Checking for latest version at ${registry}..."
-    local tags_url="https://ghcr.io/v2/eve-horizon/api/tags/list"
-    local response
-    response="$(curl -sf "$tags_url" 2>/dev/null || true)"
-    if [[ -n "$response" ]] && command -v jq &>/dev/null; then
-      local latest
-      latest="$(echo "$response" | jq -r '.tags[]' 2>/dev/null \
-        | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
-        | sort -V | tail -1)"
-      if [[ -n "$latest" ]]; then
-        if [[ "$latest" == "$version" ]]; then
-          ok "You are on the latest version."
-        else
-          echo -e "${YELLOW}Latest available:${RESET} ${latest}"
-          echo "  Run: eve-infra upgrade $latest"
-        fi
-      else
-        echo -e "${DIM}Could not determine latest version from registry.${RESET}"
-      fi
+  # Detect latest upstream release by querying GitHub tags (release-v* pattern).
+  # Primary: gh api (fast, ~400ms, uses existing auth)
+  # Fallback: git ls-remote (no auth required, slower)
+  info "Checking for latest upstream release..."
+  local latest=""
+
+  if command -v gh &>/dev/null; then
+    latest="$(gh api repos/Incept5/eve-horizon/tags --jq '.[].name' 2>/dev/null \
+      | grep '^release-v' \
+      | sed 's/^release-v//' \
+      | sort -V | tail -1)" || true
+  fi
+
+  if [[ -z "$latest" ]]; then
+    latest="$(git ls-remote --tags https://github.com/Incept5/eve-horizon.git 2>/dev/null \
+      | awk '{print $2}' \
+      | grep '^refs/tags/release-v' \
+      | sed 's|refs/tags/release-v||' \
+      | sort -V | tail -1)" || true
+  fi
+
+  if [[ -n "$latest" ]]; then
+    if [[ "$latest" == "$version" ]]; then
+      ok "You are on the latest version."
     else
-      echo -e "${DIM}Could not query registry (curl/jq unavailable or registry unreachable).${RESET}"
-      echo "  Check manually: https://github.com/orgs/eve-horizon/packages"
+      echo -e "${YELLOW}Latest available:${RESET} ${latest}"
+      echo "  Run: eve-infra upgrade $latest"
     fi
+  else
+    echo -e "${DIM}Could not determine latest version (gh/git unavailable or repo unreachable).${RESET}"
+    echo "  Check manually: https://github.com/Incept5/eve-horizon/tags"
   fi
 }
 
@@ -398,8 +402,8 @@ cmd_upgrade() {
       [[ -f "$patch_file" ]] || continue
       # Replace registry/image:old_version or :latest with :new_version
       sed -i.bak \
-        -e "s|image: *${registry}/\([^:]*\):${old_version}|image: ${registry}/\1:${new_version}|g" \
-        -e "s|image: *${registry}/\([^:]*\):latest|image: ${registry}/\1:${new_version}|g" \
+        -e "s|${registry}/\([^:]*\):${old_version}|${registry}/\1:${new_version}|g" \
+        -e "s|${registry}/\([^:]*\):latest|${registry}/\1:${new_version}|g" \
         "$patch_file"
       rm -f "$patch_file.bak"
     done
