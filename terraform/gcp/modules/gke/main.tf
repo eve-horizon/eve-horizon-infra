@@ -94,7 +94,7 @@ resource "google_container_node_pool" "default" {
   node_config {
     machine_type    = var.default_node_machine_type
     disk_size_gb    = var.boot_disk_size
-    disk_type       = "pd-ssd"
+    disk_type       = "pd-balanced"
     service_account = var.service_account_email
     oauth_scopes    = ["https://www.googleapis.com/auth/cloud-platform"]
 
@@ -132,7 +132,7 @@ resource "google_container_node_pool" "agents" {
   node_config {
     machine_type    = var.agent_node_machine_type
     disk_size_gb    = var.boot_disk_size
-    disk_type       = "pd-ssd"
+    disk_type       = "pd-balanced"
     spot            = true
     service_account = var.service_account_email
     oauth_scopes    = ["https://www.googleapis.com/auth/cloud-platform"]
@@ -177,7 +177,7 @@ resource "google_container_node_pool" "apps" {
   node_config {
     machine_type    = var.apps_node_machine_type
     disk_size_gb    = var.boot_disk_size
-    disk_type       = "pd-ssd"
+    disk_type       = "pd-balanced"
     spot            = true
     service_account = var.service_account_email
     oauth_scopes    = ["https://www.googleapis.com/auth/cloud-platform"]
