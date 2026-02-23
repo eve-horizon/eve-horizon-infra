@@ -38,9 +38,34 @@ bin/eve-infra            # Operational CLI (status, deploy, logs, db, secrets)
 ./bin/eve-infra status     # Pod status, versions, resource usage
 ./bin/eve-infra health     # Health check the API endpoint
 ./bin/eve-infra logs api   # Tail API logs (also: worker, orchestrator, gateway, agent-runtime)
-./bin/eve-infra deploy     # Trigger deploy workflow
+./bin/eve-infra deploy     # Apply manifests to cluster (kustomize build + kubectl apply)
+./bin/eve-infra upgrade <ver>  # Bump version in platform.yaml + all overlay patches
 ./bin/eve-infra db connect # Open psql session
 ```
+
+## Version Upgrades
+
+Upgrade the platform:
+
+```bash
+./bin/eve-infra upgrade <version>   # Updates config/platform.yaml + k8s/overlays/gcp/*-patch.yaml
+git add -A && git commit -m "chore: upgrade eve platform to <version>"
+./bin/eve-infra deploy              # Rolls out new images to cluster
+./bin/eve-infra health              # Verify
+```
+
+Images are pulled from `public.ecr.aws/w7c4v0w3/eve-horizon/<service>:<version>`.
+
+## Upstream Platform Fixes
+
+The upstream Eve Horizon platform source lives at `../../incept5/eve-horizon` (GitHub: `Incept5/eve-horizon`). To ship a hotfix:
+
+1. Fix the bug in the upstream repo
+2. Commit and push to main
+3. Tag `release-v<next>` and push — triggers CI to build all images (~5-10 min)
+4. Run `eve-infra upgrade <next>` + `eve-infra deploy` in this repo
+
+See the `eve-horizon-hotfix` skill for the full workflow.
 
 ## Skills
 
@@ -50,7 +75,33 @@ Install agent skills:
 eve skills install
 ```
 
-This reads `skills.txt` and installs from `skills/` into `.agent/skills/` + `.claude/skills/`. The `eve-infra-ops` skill provides operational guidance for debugging and managing this deployment.
+This reads `skills.txt` and installs from `skills/` into `.agent/skills/` + `.claude/skills/`.
+
+Available local skills:
+- `eve-infra-ops` — operational guidance for debugging and managing this deployment
+- `eve-horizon-hotfix` — fix bugs in upstream eve-horizon, tag releases, deploy to cluster
+- `eve-template-backport-sync` — backport reusable changes to the upstream infra template
+- `upstream-sync` — sync downstream with upstream template changes
+- `redeploy-if-necessary` — check for new upstream releases and deploy with zero downtime
+- `check-spend` — audit live GCP spend, itemize costs, flag savings opportunities
+
+## Cost Management
+
+Infrastructure costs are controlled via `terraform/gcp/terraform.tfvars`. Three sizing profiles:
+
+| Profile | Compute | Database | Disk | Est. $/mo |
+|---------|---------|----------|------|-----------|
+| **Dev** | e2-standard-2, min 1 node | db-g1-small | 50GB pd-balanced | ~$150 |
+| **Staging** | e2-standard-4, min 1 node | db-custom-2-8192 | 50GB pd-balanced | ~$300 |
+| **Production** | e2-standard-4, min 2 nodes | db-custom-4-16384 | 100GB pd-ssd | ~$600 |
+
+To audit current spend and find savings: `check-spend` skill or review `terraform.tfvars` directly.
+
+Key cost levers:
+- **Machine type:** e2-standard-2 vs e2-standard-4 (biggest single factor)
+- **Disk type:** pd-balanced vs pd-ssd (pd-balanced avoids SSD quota limits too)
+- **Database tier:** db-g1-small (~$27/mo) vs db-custom-2-8192 (~$125/mo)
+- **Node pool min counts:** 0 for agents/apps means pay-per-use
 
 ## Upstream Sync (Template Repo)
 
