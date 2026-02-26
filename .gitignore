@@ -1,6 +1,7 @@
 # Terraform
 *.tfstate
 *.tfstate.backup
+*.tfstate.*.backup
 .terraform/
 .terraform.lock.hcl
 terraform.tfvars
@@ -12,6 +13,10 @@ secrets.env
 
 # Local kubeconfig (used by agents and bin/eve-infra)
 config/kubeconfig.yaml
+.envrc
+
+# Eve CLI local profile
+.eve/
 
 # OS
 .DS_Store
