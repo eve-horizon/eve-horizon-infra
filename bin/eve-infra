@@ -595,6 +595,58 @@ cmd_db_backup() {
   esac
 }
 
+cmd_db_restore() {
+  require_config
+  local prefix
+  prefix="$(cfg_get 'name_prefix')"
+  local bucket="${prefix}-backups"
+
+  echo -e "${BOLD}Database Restore${RESET}"
+  echo ""
+  info "Backup bucket: gs://${bucket}/db/"
+  echo ""
+  echo "  List available backups:"
+  echo "    gsutil ls -l gs://${bucket}/db/"
+  echo ""
+  echo "  Download a backup:"
+  echo "    gsutil cp gs://${bucket}/db/eve-2026-01-15.dump ./eve-restore.dump"
+  echo ""
+  echo "  Restore to Cloud SQL (via temporary pod):"
+  echo "    kubectl run db-restore --rm -it -n $NAMESPACE \\"
+  echo "      --image=google/cloud-sdk:slim \\"
+  echo "      --env=DATABASE_URL=\$(kubectl get secret eve-app -n $NAMESPACE -o jsonpath='{.data.DATABASE_URL}' | base64 -d) \\"
+  echo "      -- bash -c '"
+  echo "        apt-get update -qq && apt-get install -y -qq postgresql-client >/dev/null 2>&1"
+  echo "        gsutil cp gs://${bucket}/db/eve-2026-01-15.dump /tmp/restore.dump"
+  echo "        pg_restore --clean --if-exists -d \$DATABASE_URL /tmp/restore.dump"
+  echo "      '"
+  echo ""
+  warn "Replace eve-2026-01-15.dump with the actual backup filename."
+  warn "The --clean flag drops and recreates tables. The database will be unavailable during restore."
+}
+
+cmd_fs_restore() {
+  require_config
+  local prefix
+  prefix="$(cfg_get 'name_prefix')"
+  local bucket="${prefix}-backups"
+
+  echo -e "${BOLD}Filesystem Restore${RESET}"
+  echo ""
+  info "Backup bucket: gs://${bucket}/fs/org-default/"
+  echo ""
+  echo "  List backed-up files:"
+  echo "    gsutil ls gs://${bucket}/fs/org-default/"
+  echo ""
+  echo "  Restore to Filestore (via temporary pod):"
+  echo "    kubectl run fs-restore --rm -it -n $NAMESPACE \\"
+  echo "      --image=google/cloud-sdk:slim \\"
+  echo "      --overrides='{\"spec\":{\"containers\":[{\"name\":\"fs-restore\",\"image\":\"google/cloud-sdk:slim\",\"volumeMounts\":[{\"name\":\"org-fs\",\"mountPath\":\"/mnt/org-fs\"}]}],\"volumes\":[{\"name\":\"org-fs\",\"persistentVolumeClaim\":{\"claimName\":\"eve-org-fs-org-default\"}}]}}' \\"
+  echo "      -- bash -c 'gsutil -m rsync -r gs://${bucket}/fs/org-default/ /mnt/org-fs/'"
+  echo ""
+  warn "This overwrites the current filesystem contents with the backup."
+}
+
 cmd_db_connect() {
   require_cluster_access write
 
@@ -1033,7 +1085,9 @@ Secrets:
 Database:
   db migrate          Run the database migration job
   db backup           Show backup instructions for your database provider
+  db restore          Show restore instructions (from GCS backup bucket)
   db connect          Open an interactive psql session
+  fs restore          Show filesystem restore instructions (from GCS backup bucket)
 
 Upstream Sync:
   sync status         Show sync state (last sync, pending, remote URL)
@@ -1108,8 +1162,18 @@ main() {
       case "$sub" in
         migrate) cmd_db_migrate "$@" ;;
         backup)  cmd_db_backup "$@" ;;
+        restore) cmd_db_restore "$@" ;;
         connect) cmd_db_connect "$@" ;;
-        *)       die "Usage: eve-infra db <migrate|backup|connect>" ;;
+        *)       die "Usage: eve-infra db <migrate|backup|restore|connect>" ;;
+      esac
+      ;;
+
+    fs)
+      local sub="${1:-}"
+      shift 2>/dev/null || true
+      case "$sub" in
+        restore) cmd_fs_restore "$@" ;;
+        *)       die "Usage: eve-infra fs <restore>" ;;
       esac
       ;;
 
