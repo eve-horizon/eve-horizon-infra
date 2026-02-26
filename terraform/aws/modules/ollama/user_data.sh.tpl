@@ -9,20 +9,44 @@ ASG_NAME="${asg_name}"
 IDLE_TIMEOUT_MINUTES="${idle_timeout_minutes}"
 REGION="${region}"
 VOLUME_ID="${ollama_volume_id}"
+DNS_ZONE_ID="${dns_zone_id}"
+DNS_NAME="${dns_name}"
 
 # IMDSv2 token for metadata queries
 IMDS_TOKEN=$(curl -sX PUT "http://169.254.169.254/latest/api/token" \
   -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
 INSTANCE_ID=$(curl -s -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" \
   http://169.254.169.254/latest/meta-data/instance-id)
+PRIVATE_IP=$(curl -s -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" \
+  http://169.254.169.254/latest/meta-data/local-ipv4)
 
-echo "Instance: $INSTANCE_ID  Region: $REGION  ASG: $ASG_NAME"
+echo "Instance: $INSTANCE_ID  Region: $REGION  ASG: $ASG_NAME  IP: $PRIVATE_IP"
 
 # -----------------------------------------------------------------------------
 # 1. System packages
 # -----------------------------------------------------------------------------
 apt-get update
 apt-get install -y awscli jq
+
+# -----------------------------------------------------------------------------
+# 1b. Register private IP in Route 53 (stable DNS for callers)
+# -----------------------------------------------------------------------------
+echo "Registering $DNS_NAME -> $PRIVATE_IP in Route 53..."
+aws route53 change-resource-record-sets \
+  --hosted-zone-id "$DNS_ZONE_ID" \
+  --change-batch "{
+    \"Changes\": [{
+      \"Action\": \"UPSERT\",
+      \"ResourceRecordSet\": {
+        \"Name\": \"$DNS_NAME\",
+        \"Type\": \"A\",
+        \"TTL\": 10,
+        \"ResourceRecords\": [{\"Value\": \"$PRIVATE_IP\"}]
+      }
+    }]
+  }" \
+  --region "$REGION"
+echo "DNS registered: $DNS_NAME -> $PRIVATE_IP"
 
 # -----------------------------------------------------------------------------
 # 2. NVIDIA drivers (headless server, no X11)

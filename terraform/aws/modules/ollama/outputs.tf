@@ -19,3 +19,13 @@ output "volume_id" {
   description = "ID of the persistent EBS volume for model storage"
   value       = aws_ebs_volume.ollama_models.id
 }
+
+output "dns_name" {
+  description = "Private DNS name for the Ollama endpoint (resolves within VPC)"
+  value       = "ollama.${var.name_prefix}.internal"
+}
+
+output "endpoint_url" {
+  description = "Full Ollama API URL using private DNS"
+  value       = "http://ollama.${var.name_prefix}.internal:11434"
+}

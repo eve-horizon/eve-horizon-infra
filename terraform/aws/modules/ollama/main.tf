@@ -32,6 +32,35 @@ data "aws_ami" "ubuntu" {
 }
 
 # -----------------------------------------------------------------------------
+# Private DNS (stable endpoint across instance replacements)
+# -----------------------------------------------------------------------------
+
+resource "aws_route53_zone" "ollama" {
+  name = "${var.name_prefix}.internal"
+
+  vpc {
+    vpc_id = var.vpc_id
+  }
+
+  tags = {
+    Name = "${var.name_prefix}-internal-zone"
+  }
+}
+
+# Seed record — replaced by user_data on every boot with the real private IP.
+resource "aws_route53_record" "ollama" {
+  zone_id = aws_route53_zone.ollama.zone_id
+  name    = "ollama.${var.name_prefix}.internal"
+  type    = "A"
+  ttl     = 10
+  records = ["127.0.0.1"]
+
+  lifecycle {
+    ignore_changes = [records] # managed by instance user_data
+  }
+}
+
+# -----------------------------------------------------------------------------
 # Security Group
 # -----------------------------------------------------------------------------
 
@@ -131,6 +160,23 @@ resource "aws_iam_role_policy" "ollama_ebs" {
   })
 }
 
+# Route 53 private DNS (register instance IP on boot)
+resource "aws_iam_role_policy" "ollama_dns" {
+  name = "${var.name_prefix}-ollama-dns"
+  role = aws_iam_role.ollama.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = "route53:ChangeResourceRecordSets"
+        Resource = aws_route53_zone.ollama.arn
+      }
+    ]
+  })
+}
+
 # ASG self-management (idle shutdown sets desired=0)
 resource "aws_iam_role_policy" "ollama_asg_self" {
   name = "${var.name_prefix}-ollama-asg-self"
@@ -208,6 +254,8 @@ resource "aws_launch_template" "ollama" {
     idle_timeout_minutes = var.idle_timeout_minutes
     region               = data.aws_region.current.name
     ollama_volume_id     = aws_ebs_volume.ollama_models.id
+    dns_zone_id          = aws_route53_zone.ollama.zone_id
+    dns_name             = "ollama.${var.name_prefix}.internal"
   }))
 
   tag_specifications {
