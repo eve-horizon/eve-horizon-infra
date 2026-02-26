@@ -53,3 +53,9 @@ variable "use_spot" {
   type        = bool
   default     = true
 }
+
+variable "ollama_version" {
+  description = "Ollama version to install (empty string = latest stable)"
+  type        = string
+  default     = ""
+}

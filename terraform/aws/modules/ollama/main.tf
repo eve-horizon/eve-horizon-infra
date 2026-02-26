@@ -256,6 +256,7 @@ resource "aws_launch_template" "ollama" {
     ollama_volume_id     = aws_ebs_volume.ollama_models.id
     dns_zone_id          = aws_route53_zone.ollama.zone_id
     dns_name             = "ollama.${var.name_prefix}.internal"
+    ollama_version       = var.ollama_version
   }))
 
   tag_specifications {

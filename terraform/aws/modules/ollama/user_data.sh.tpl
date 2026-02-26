@@ -117,7 +117,7 @@ echo "Mounted $DEVICE at /data/ollama ($(df -h /data/ollama | awk 'NR==2{print $
 # 4. Install Ollama
 # -----------------------------------------------------------------------------
 echo "Installing Ollama..."
-curl -fsSL https://ollama.com/install.sh | sh
+curl -fsSL https://ollama.com/install.sh | OLLAMA_VERSION=${ollama_version} sh
 
 # -----------------------------------------------------------------------------
 # 5. Configure Ollama (bind to all interfaces, use EBS for models)
