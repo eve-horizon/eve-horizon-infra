@@ -259,39 +259,12 @@ EOF
 ok "ClusterIssuers created."
 
 # -------------------------------------------------------------------------
-# 4. Create container registry pull secret
+# 4. Container registry (no pull secret needed)
 # -------------------------------------------------------------------------
-info "Creating registry pull secret..."
-
-if [[ -f "$SECRETS_FILE" ]]; then
-  # Source secrets to get GHCR credentials
-  # shellcheck disable=SC1090
-  set +u
-  source "$SECRETS_FILE"
-  set -u
-
-  if [[ -n "${GHCR_USERNAME:-}" && -n "${GHCR_TOKEN:-}" ]]; then
-    kubectl create secret docker-registry eve-registry \
-      --docker-server=ghcr.io \
-      --docker-username="$GHCR_USERNAME" \
-      --docker-password="$GHCR_TOKEN" \
-      --namespace="$NAMESPACE" \
-      --dry-run=client -o yaml | kubectl apply -f -
-    ok "Registry secret 'eve-registry' created."
-  else
-    warn "GHCR_USERNAME or GHCR_TOKEN not set in secrets.env. Skipping registry secret."
-    echo "  Create it manually:"
-    echo "    kubectl create secret docker-registry eve-registry \\"
-    echo "      --docker-server=ghcr.io \\"
-    echo "      --docker-username=<your-username> \\"
-    echo "      --docker-password=<your-token> \\"
-    echo "      -n $NAMESPACE"
-  fi
-else
-  warn "config/secrets.env not found. Skipping registry secret."
-  echo "  Copy the example and fill in your values:"
-  echo "    cp config/secrets.env.example config/secrets.env"
-fi
+# Platform images use public ECR (anonymous pulls).
+# App builds use the Eve-native in-cluster registry (auth via EVE_INTERNAL_API_KEY).
+# No docker-registry pull secret is required.
+ok "Registry: public ECR (platform) + Eve-native (app builds). No pull secret needed."
 
 # -------------------------------------------------------------------------
 # 5. Sync application secrets

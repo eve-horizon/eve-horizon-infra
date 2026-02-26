@@ -92,8 +92,7 @@ eve secrets set Z_AI_API_KEY <key> --org $ORG_ID
 eve secrets set GITHUB_TOKEN <pat> --org $ORG_ID
 
 # Required for deploy flow (scenario 05)
-eve secrets set GHCR_USERNAME <username> --project $PROJECT_ID
-eve secrets set GHCR_TOKEN <pat> --project $PROJECT_ID
+eve secrets set GITHUB_TOKEN <pat> --project $PROJECT_ID
 eve secrets set POSTGRES_PASSWORD eve --project $PROJECT_ID
 ```
 
