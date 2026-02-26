@@ -127,8 +127,10 @@ echo "Ollama is ready: $(curl -s http://localhost:11434/api/version)"
 # Pulls run synchronously — script blocks until each model is fully downloaded.
 # -----------------------------------------------------------------------------
 echo "Pre-pulling models (skips if cached)..."
-curl -sf http://localhost:11434/api/pull -d '{"name":"llama3.3:70b-instruct-q4_K_M"}' | tail -1 || echo "WARNING: llama3.3 pull failed"
-curl -sf http://localhost:11434/api/pull -d '{"name":"qwen2.5-coder:32b-instruct-q4_K_M"}' | tail -1 || echo "WARNING: qwen2.5-coder pull failed"
+curl -sf http://localhost:11434/api/pull -d '{"name":"rnj-1:8b"}' | tail -1 || echo "WARNING: rnj-1:8b pull failed"
+curl -sf http://localhost:11434/api/pull -d '{"name":"ministral-3:3b"}' | tail -1 || echo "WARNING: ministral-3:3b pull failed"
+curl -sf http://localhost:11434/api/pull -d '{"name":"gpt-oss:20b"}' | tail -1 || echo "WARNING: gpt-oss:20b pull failed"
+curl -sf http://localhost:11434/api/pull -d '{"name":"qwen3-vl:2b-instruct"}' | tail -1 || echo "WARNING: qwen3-vl:2b-instruct pull failed"
 
 # -----------------------------------------------------------------------------
 # 7. Idle auto-shutdown (checks every 5 min, shuts down after N min idle)

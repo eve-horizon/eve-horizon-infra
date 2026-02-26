@@ -47,3 +47,9 @@ variable "idle_timeout_minutes" {
   type        = number
   default     = 30
 }
+
+variable "use_spot" {
+  description = "Use spot instances (cheaper but may lack capacity)"
+  type        = bool
+  default     = true
+}
