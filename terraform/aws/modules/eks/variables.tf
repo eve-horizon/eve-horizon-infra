@@ -16,11 +16,6 @@ variable "vpc_id" {
   type        = string
 }
 
-variable "vpc_cidr" {
-  description = "VPC CIDR block (for NLB NodePort ingress rules)"
-  type        = string
-}
-
 variable "public_subnet_ids" {
   description = "Public subnet IDs for control plane/LB placement"
   type        = list(string)
@@ -64,7 +59,7 @@ variable "default_desired_size" {
 variable "agents_instance_types" {
   description = "Instance types for agents spot node group"
   type        = list(string)
-  default     = ["t3.large", "t3.medium"]
+  default     = ["m6i.xlarge", "m5.xlarge"]
 }
 
 variable "agents_min_size" {
@@ -76,7 +71,7 @@ variable "agents_min_size" {
 variable "agents_max_size" {
   description = "Maximum size for agents node group"
   type        = number
-  default     = 2
+  default     = 3
 }
 
 variable "agents_desired_size" {
@@ -88,7 +83,7 @@ variable "agents_desired_size" {
 variable "apps_instance_types" {
   description = "Instance types for apps spot node group"
   type        = list(string)
-  default     = ["t3.medium", "t3.small"]
+  default     = ["t3.large", "t3.medium"]
 }
 
 variable "apps_min_size" {
@@ -100,7 +95,7 @@ variable "apps_min_size" {
 variable "apps_max_size" {
   description = "Maximum size for apps node group"
   type        = number
-  default     = 2
+  default     = 5
 }
 
 variable "apps_desired_size" {
