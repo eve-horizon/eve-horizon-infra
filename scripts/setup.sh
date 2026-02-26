@@ -283,7 +283,7 @@ fi
 # -------------------------------------------------------------------------
 # 6. Sync registry signing cert (required for aws-eks registry overlay)
 # -------------------------------------------------------------------------
-if [ "$OVERLAY" = "aws-eks" ]; then
+if [ "$OVERLAY" = "aws-eks" ] || [ "$CLOUD" = "gcp" ]; then
   REGISTRY_SIGNING_CERT_PATH="${REGISTRY_SIGNING_CERT_PATH:-/tmp/registry-signing.crt}"
   if [[ -f "$REGISTRY_SIGNING_CERT_PATH" ]]; then
     info "Syncing registry signing cert secret..."
