@@ -439,6 +439,13 @@ cmd_deploy() {
     kube apply -k "$overlay_dir" -n "$NAMESPACE"
   fi
 
+  # Apply vanity domain ingress (lives outside kustomize — different namespace)
+  local vanity="$overlay_dir/www-redirect-ingress.yaml"
+  if [[ -f "$vanity" ]]; then
+    info "Applying vanity domain ingress..."
+    kube apply -f "$vanity"
+  fi
+
   echo ""
   info "Waiting for rollouts..."
   local resource
