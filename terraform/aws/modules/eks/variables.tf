@@ -16,6 +16,11 @@ variable "vpc_id" {
   type        = string
 }
 
+variable "vpc_cidr" {
+  description = "VPC CIDR block (for NLB NodePort ingress rules)"
+  type        = string
+}
+
 variable "public_subnet_ids" {
   description = "Public subnet IDs for control plane/LB placement"
   type        = list(string)
