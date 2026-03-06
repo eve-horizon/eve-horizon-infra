@@ -84,6 +84,7 @@ module "eks" {
   default_max_size      = var.eks_default_max_size
   default_desired_size  = var.eks_default_desired_size
   agents_instance_types = var.eks_agents_instance_types
+  agents_subnet_ids     = var.eks_agents_subnet_ids
   agents_min_size       = var.eks_agents_min_size
   agents_max_size       = var.eks_agents_max_size
   agents_desired_size   = var.eks_agents_desired_size

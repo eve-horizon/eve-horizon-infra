@@ -67,6 +67,12 @@ variable "agents_instance_types" {
   default     = ["m6i.xlarge", "m5.xlarge"]
 }
 
+variable "agents_subnet_ids" {
+  description = "Subnet IDs for agents node group (pin to PV AZ). Defaults to private_subnet_ids if null."
+  type        = list(string)
+  default     = null
+}
+
 variable "agents_min_size" {
   description = "Minimum size for agents node group"
   type        = number

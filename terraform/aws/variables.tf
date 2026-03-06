@@ -122,6 +122,12 @@ variable "eks_agents_instance_types" {
   default     = ["m6i.xlarge", "m5.xlarge"]
 }
 
+variable "eks_agents_subnet_ids" {
+  description = "Subnet IDs for agents node group. Pin to PV AZ to prevent autoscaler deadlock. Defaults to all private subnets if null."
+  type        = list(string)
+  default     = null
+}
+
 variable "eks_agents_min_size" {
   description = "Minimum nodes for EKS agents spot node group"
   type        = number

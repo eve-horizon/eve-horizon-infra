@@ -339,7 +339,7 @@ resource "aws_eks_node_group" "agents" {
   cluster_name    = aws_eks_cluster.main.name
   node_group_name = "agents"
   node_role_arn   = aws_iam_role.node.arn
-  subnet_ids      = var.private_subnet_ids
+  subnet_ids      = coalesce(var.agents_subnet_ids, var.private_subnet_ids)
   instance_types  = var.agents_instance_types
   capacity_type   = "SPOT"
 
