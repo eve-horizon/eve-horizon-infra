@@ -56,6 +56,9 @@ resource "aws_db_instance" "main" {
   delete_automated_backups = !var.deletion_protection
   deletion_protection      = var.deletion_protection
 
+  # Apply changes immediately (don't defer to maintenance window)
+  apply_immediately = true
+
   # Performance monitoring
   performance_insights_enabled = true
 
