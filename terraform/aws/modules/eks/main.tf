@@ -74,33 +74,63 @@ resource "aws_security_group" "nodes" {
   description = "Shared SG for EKS worker nodes"
   vpc_id      = var.vpc_id
 
-  ingress {
-    description = "Node-to-node traffic"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    self        = true
-  }
-
-  ingress {
-    description = "NLB health checks and traffic on NodePort range"
-    from_port   = 30000
-    to_port     = 32767
-    protocol    = "tcp"
-    cidr_blocks = [var.vpc_cidr]
-  }
-
-  egress {
-    description = "All outbound"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
+  # IMPORTANT: No inline ingress/egress blocks here.
+  # Using separate aws_security_group_rule resources below so that
+  # Terraform does NOT clobber rules added by the AWS Load Balancer
+  # Controller (kubernetes.io/rule/nlb/* rules for NLB NodePort traffic).
+  # Inline blocks make Terraform authoritative over ALL rules, causing it
+  # to revoke any rule not declared here on every apply.
 
   tags = {
     Name = "${var.name_prefix}-eks-nodes-sg"
   }
+
+  lifecycle {
+    # Ignore ingress/egress changes made by K8s cloud controller
+    ignore_changes = [ingress, egress]
+  }
+}
+
+# --- Node SG rules (separate resources to coexist with K8s-managed rules) ---
+
+resource "aws_security_group_rule" "nodes_self" {
+  description       = "Node-to-node traffic"
+  type              = "ingress"
+  from_port         = 0
+  to_port           = 0
+  protocol          = "-1"
+  self              = true
+  security_group_id = aws_security_group.nodes.id
+}
+
+resource "aws_security_group_rule" "nodes_nlb_health" {
+  description       = "NLB health checks on NodePort range (VPC CIDR)"
+  type              = "ingress"
+  from_port         = 30000
+  to_port           = 32767
+  protocol          = "tcp"
+  cidr_blocks       = [var.vpc_cidr]
+  security_group_id = aws_security_group.nodes.id
+}
+
+resource "aws_security_group_rule" "nodes_nlb_client" {
+  description       = "NLB client traffic on NodePort range (TCP mode preserves source IP)"
+  type              = "ingress"
+  from_port         = 30000
+  to_port           = 32767
+  protocol          = "tcp"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.nodes.id
+}
+
+resource "aws_security_group_rule" "nodes_egress" {
+  description       = "All outbound"
+  type              = "egress"
+  from_port         = 0
+  to_port           = 0
+  protocol          = "-1"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.nodes.id
 }
 
 # -----------------------------------------------------------------------------
@@ -275,7 +305,7 @@ resource "aws_eks_node_group" "default" {
 
   launch_template {
     id      = aws_launch_template.default.id
-    version = "$Latest"
+    version = aws_launch_template.default.latest_version
   }
 
   scaling_config {
@@ -292,6 +322,10 @@ resource "aws_eks_node_group" "default" {
     Name                                              = "${var.name_prefix}-default"
     "k8s.io/cluster-autoscaler/enabled"               = "true"
     "k8s.io/cluster-autoscaler/${local.cluster_name}" = "owned"
+  }
+
+  lifecycle {
+    ignore_changes = [scaling_config[0].desired_size]
   }
 
   depends_on = [
@@ -311,7 +345,7 @@ resource "aws_eks_node_group" "agents" {
 
   launch_template {
     id      = aws_launch_template.agents.id
-    version = "$Latest"
+    version = aws_launch_template.agents.latest_version
   }
 
   scaling_config {
@@ -336,6 +370,10 @@ resource "aws_eks_node_group" "agents" {
     "k8s.io/cluster-autoscaler/${local.cluster_name}" = "owned"
   }
 
+  lifecycle {
+    ignore_changes = [scaling_config[0].desired_size]
+  }
+
   depends_on = [
     aws_iam_role_policy_attachment.node_worker,
     aws_iam_role_policy_attachment.node_cni,
@@ -353,7 +391,7 @@ resource "aws_eks_node_group" "apps" {
 
   launch_template {
     id      = aws_launch_template.apps.id
-    version = "$Latest"
+    version = aws_launch_template.apps.latest_version
   }
 
   scaling_config {
@@ -376,6 +414,10 @@ resource "aws_eks_node_group" "apps" {
     Name                                              = "${var.name_prefix}-apps"
     "k8s.io/cluster-autoscaler/enabled"               = "true"
     "k8s.io/cluster-autoscaler/${local.cluster_name}" = "owned"
+  }
+
+  lifecycle {
+    ignore_changes = [scaling_config[0].desired_size]
   }
 
   depends_on = [
