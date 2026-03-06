@@ -80,6 +80,11 @@ output "storage_org_bucket_prefix" {
   value       = local.storage_org_bucket_prefix
 }
 
+output "db_snapshots_bucket_name" {
+  description = "S3 bucket for managed DB snapshots"
+  value       = var.compute_model == "eks" ? aws_s3_bucket.db_snapshots[0].bucket : null
+}
+
 output "next_steps" {
   description = "Helpful next steps after deployment"
   value = var.compute_model == "eks" ? (
