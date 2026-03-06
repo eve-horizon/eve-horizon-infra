@@ -64,8 +64,8 @@ route53_zone_id = "Z0123456789ABCDEFGHIJ"
 # --- Database (RDS PostgreSQL) ---
 db_name           = "eve"
 db_username       = "eve"
-db_password       = "CHANGE_ME"
-database_instance_class = "db.t3.micro"
+# db_password is in secrets.auto.tfvars (gitignored, auto-loaded by Terraform)
+database_instance_class = "db.t3.medium"
 deletion_protection = false
 
 # --- Ollama GPU (optional) ---
