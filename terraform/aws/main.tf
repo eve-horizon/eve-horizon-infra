@@ -12,6 +12,8 @@ locals {
   effective_ollama_instance_type = (var.ollama_compute_type != null && trimspace(var.ollama_compute_type) != "") ? trimspace(var.ollama_compute_type) : var.ollama_instance_type
   effective_ollama_volume_size   = var.ollama_disk_size_gb != null ? var.ollama_disk_size_gb : var.ollama_volume_size
   registry_bucket_name           = "${var.name_prefix}-registry-${data.aws_caller_identity.current.account_id}"
+  storage_internal_bucket        = "${var.name_prefix}-eve-internal"
+  storage_org_bucket_prefix      = "${var.name_prefix}-eve-org"
 }
 
 # -----------------------------------------------------------------------------
@@ -242,6 +244,144 @@ resource "aws_iam_role_policy" "registry_irsa" {
 }
 
 # -----------------------------------------------------------------------------
+# Object Store — S3 bucket for platform storage (eve-internal)
+# Per-org buckets (eve-org-{slug}) are created dynamically by the API.
+# -----------------------------------------------------------------------------
+resource "aws_s3_bucket" "eve_internal" {
+  count  = local.effective_compute_model == "eks" ? 1 : 0
+  bucket = local.storage_internal_bucket
+}
+
+resource "aws_s3_bucket_versioning" "eve_internal" {
+  count  = local.effective_compute_model == "eks" ? 1 : 0
+  bucket = aws_s3_bucket.eve_internal[0].id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "eve_internal" {
+  count  = local.effective_compute_model == "eks" ? 1 : 0
+  bucket = aws_s3_bucket.eve_internal[0].id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "eve_internal" {
+  count  = local.effective_compute_model == "eks" ? 1 : 0
+  bucket = aws_s3_bucket.eve_internal[0].id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+# -----------------------------------------------------------------------------
+# API IRSA — unified role for the eve-api pod (S3 storage + optional Ollama)
+# -----------------------------------------------------------------------------
+resource "aws_iam_role" "api_irsa" {
+  count = local.effective_compute_model == "eks" ? 1 : 0
+  name  = "${var.name_prefix}-api-irsa"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Federated = module.eks[0].oidc_provider_arn
+        }
+        Action = "sts:AssumeRoleWithWebIdentity"
+        Condition = {
+          StringEquals = {
+            "${trimprefix(module.eks[0].oidc_provider_url, "https://")}:aud" = "sts.amazonaws.com"
+            "${trimprefix(module.eks[0].oidc_provider_url, "https://")}:sub" = "system:serviceaccount:eve:eve-api"
+          }
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "api_storage" {
+  count = local.effective_compute_model == "eks" ? 1 : 0
+  name  = "${var.name_prefix}-api-storage"
+  role  = aws_iam_role.api_irsa[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "InternalBucket"
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject",
+          "s3:ListBucket",
+          "s3:GetBucketLocation",
+          "s3:ListBucketMultipartUploads",
+          "s3:AbortMultipartUpload",
+        ]
+        Resource = [
+          aws_s3_bucket.eve_internal[0].arn,
+          "${aws_s3_bucket.eve_internal[0].arn}/*",
+        ]
+      },
+      {
+        Sid    = "OrgBuckets"
+        Effect = "Allow"
+        Action = [
+          "s3:CreateBucket",
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject",
+          "s3:ListBucket",
+          "s3:GetBucketLocation",
+          "s3:PutBucketCors",
+          "s3:PutBucketPolicy",
+          "s3:GetBucketPolicy",
+          "s3:ListBucketMultipartUploads",
+          "s3:AbortMultipartUpload",
+        ]
+        Resource = [
+          "arn:aws:s3:::${local.storage_org_bucket_prefix}-*",
+          "arn:aws:s3:::${local.storage_org_bucket_prefix}-*/*",
+        ]
+      },
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "api_ollama_wake" {
+  count = var.ollama_enabled && local.effective_compute_model == "eks" ? 1 : 0
+  name  = "${var.name_prefix}-api-ollama-wake"
+  role  = aws_iam_role.api_irsa[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = "autoscaling:UpdateAutoScalingGroup"
+        Resource = module.ollama[0].asg_arn
+      },
+      {
+        Effect   = "Allow"
+        Action   = "autoscaling:DescribeAutoScalingGroups"
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+# -----------------------------------------------------------------------------
 # Ollama GPU Host Module (optional)
 # -----------------------------------------------------------------------------
 module "ollama" {
@@ -267,53 +407,6 @@ resource "aws_iam_role_policy" "k3s_ollama_wake" {
   count = var.ollama_enabled && local.effective_compute_model == "k3s" ? 1 : 0
   name  = "${var.name_prefix}-k3s-ollama-wake"
   role  = aws_iam_role.k3s_node[0].id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect   = "Allow"
-        Action   = "autoscaling:UpdateAutoScalingGroup"
-        Resource = module.ollama[0].asg_arn
-      },
-      {
-        Effect   = "Allow"
-        Action   = "autoscaling:DescribeAutoScalingGroups"
-        Resource = "*"
-      }
-    ]
-  })
-}
-
-# IAM: let eve-api pod wake/query the Ollama ASG via IRSA (EKS mode only)
-resource "aws_iam_role" "api_ollama_wake_irsa" {
-  count = var.ollama_enabled && local.effective_compute_model == "eks" ? 1 : 0
-  name  = "${var.name_prefix}-api-ollama-wake-irsa"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Principal = {
-          Federated = module.eks[0].oidc_provider_arn
-        }
-        Action = "sts:AssumeRoleWithWebIdentity"
-        Condition = {
-          StringEquals = {
-            "${trimprefix(module.eks[0].oidc_provider_url, "https://")}:aud" = "sts.amazonaws.com"
-            "${trimprefix(module.eks[0].oidc_provider_url, "https://")}:sub" = "system:serviceaccount:eve:eve-api"
-          }
-        }
-      }
-    ]
-  })
-}
-
-resource "aws_iam_role_policy" "api_ollama_wake_irsa" {
-  count = var.ollama_enabled && local.effective_compute_model == "eks" ? 1 : 0
-  name  = "${var.name_prefix}-api-ollama-wake"
-  role  = aws_iam_role.api_ollama_wake_irsa[0].id
 
   policy = jsonencode({
     Version = "2012-10-17"

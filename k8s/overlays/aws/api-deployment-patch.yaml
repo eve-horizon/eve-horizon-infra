@@ -8,7 +8,7 @@ spec:
     spec:
       containers:
         - name: api
-          image: public.ecr.aws/w7c4v0w3/eve-horizon/api:staging
+          image: public.ecr.aws/w7c4v0w3/eve-horizon/api:0.1.132
           env:
             - $patch: replace
             - name: DATABASE_URL
@@ -20,3 +20,24 @@ spec:
               value: "4701"
             - name: WORKER_URL
               value: http://eve-worker.eve.svc.cluster.local:4749
+            - name: EVE_REGISTRY_HOST
+              value: registry.eh1.incept5.dev
+            - name: EVE_REGISTRY_SIGNING_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: eve-app
+                  key: EVE_REGISTRY_SIGNING_KEY
+                  optional: true
+            - name: EVE_INTERNAL_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: eve-app
+                  key: EVE_INTERNAL_API_KEY
+            - name: EVE_STORAGE_BACKEND
+              value: "s3"
+            - name: EVE_STORAGE_REGION
+              value: "eu-west-1"
+            - name: EVE_STORAGE_INTERNAL_BUCKET
+              value: "eh1-eve-internal"
+            - name: EVE_STORAGE_ORG_BUCKET_PREFIX
+              value: "eh1-eve-org"

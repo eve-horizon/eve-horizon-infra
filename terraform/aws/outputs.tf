@@ -65,6 +65,21 @@ output "ollama_asg_name" {
   value       = var.ollama_enabled ? module.ollama[0].asg_name : null
 }
 
+output "api_irsa_role_arn" {
+  description = "IRSA role ARN for eve-api pod (S3 storage + Ollama wake)"
+  value       = var.compute_model == "eks" ? aws_iam_role.api_irsa[0].arn : null
+}
+
+output "storage_internal_bucket" {
+  description = "S3 bucket for eve-internal platform storage"
+  value       = var.compute_model == "eks" ? aws_s3_bucket.eve_internal[0].bucket : null
+}
+
+output "storage_org_bucket_prefix" {
+  description = "S3 bucket prefix for per-org storage (buckets created dynamically)"
+  value       = local.storage_org_bucket_prefix
+}
+
 output "next_steps" {
   description = "Helpful next steps after deployment"
   value = var.compute_model == "eks" ? (
