@@ -223,14 +223,6 @@ resource "aws_launch_template" "ollama" {
     }
   }
 
-  # Suppress any extra block devices baked into the AMI (e.g. data volume
-  # snapshots captured during AMI creation). The persistent EBS volume is
-  # attached by user_data at runtime, not via the launch template.
-  block_device_mappings {
-    device_name = "/dev/sdf"
-    no_device   = ""
-  }
-
   dynamic "instance_market_options" {
     for_each = var.use_spot ? [1] : []
     content {

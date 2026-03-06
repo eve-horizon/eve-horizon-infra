@@ -80,10 +80,12 @@ nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 # 3. Attach and mount persistent EBS volume
 # -----------------------------------------------------------------------------
 echo "Attaching EBS volume $VOLUME_ID..."
+# Use /dev/sdg to avoid conflict with AMI block device mappings at /dev/sdf.
+# On Nitro instances the actual device is NVMe; we match by serial below.
 aws ec2 attach-volume \
   --volume-id "$VOLUME_ID" \
   --instance-id "$INSTANCE_ID" \
-  --device /dev/sdf \
+  --device /dev/sdg \
   --region "$REGION"
 
 # Wait for device to appear. On Nitro instances with local NVMe (g5, g6, p4, etc.)
@@ -104,8 +106,8 @@ for i in $(seq 1 30); do
     fi
   done
   # Fallback for non-Nitro instances
-  if [ -e /dev/xvdf ]; then
-    DEVICE=/dev/xvdf
+  if [ -e /dev/xvdg ]; then
+    DEVICE=/dev/xvdg
     break
   fi
   sleep 2
