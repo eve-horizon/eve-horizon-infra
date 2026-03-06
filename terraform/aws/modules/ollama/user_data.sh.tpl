@@ -137,7 +137,7 @@ echo "Mounted $DEVICE at /data/ollama ($(df -h /data/ollama | awk 'NR==2{print $
 # -----------------------------------------------------------------------------
 # 4. Install Ollama (skip if correct version already installed)
 # -----------------------------------------------------------------------------
-INSTALLED_OLLAMA=$(ollama --version 2>/dev/null | grep -oP '[\d.]+' || echo "none")
+INSTALLED_OLLAMA=$(ollama --version 2>&1 | grep -oP '[\d.]+' | head -1 || echo "none")
 DESIRED_OLLAMA="${ollama_version}"
 if ! command -v ollama &>/dev/null; then
   echo "Installing Ollama $DESIRED_OLLAMA..."
