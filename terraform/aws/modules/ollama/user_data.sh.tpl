@@ -80,12 +80,10 @@ nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 # 3. Attach and mount persistent EBS volume
 # -----------------------------------------------------------------------------
 echo "Attaching EBS volume $VOLUME_ID..."
-# Use /dev/sdg to avoid conflict with AMI block device mappings at /dev/sdf.
-# On Nitro instances the actual device is NVMe; we match by serial below.
 aws ec2 attach-volume \
   --volume-id "$VOLUME_ID" \
   --instance-id "$INSTANCE_ID" \
-  --device /dev/sdg \
+  --device /dev/sdf \
   --region "$REGION"
 
 # Wait for device to appear. On Nitro instances with local NVMe (g5, g6, p4, etc.)
@@ -106,8 +104,8 @@ for i in $(seq 1 30); do
     fi
   done
   # Fallback for non-Nitro instances
-  if [ -e /dev/xvdg ]; then
-    DEVICE=/dev/xvdg
+  if [ -e /dev/xvdf ]; then
+    DEVICE=/dev/xvdf
     break
   fi
   sleep 2
@@ -135,18 +133,17 @@ resize2fs "$DEVICE" 2>/dev/null || true
 echo "Mounted $DEVICE at /data/ollama ($(df -h /data/ollama | awk 'NR==2{print $2}'))"
 
 # -----------------------------------------------------------------------------
-# 4. Install Ollama (skip if correct version already installed)
+# 4. Install Ollama (skip on pre-baked AMI unless version changed)
 # -----------------------------------------------------------------------------
-INSTALLED_OLLAMA=$(ollama --version 2>&1 | grep -oP '[\d.]+' | head -1 || echo "none")
 DESIRED_OLLAMA="${ollama_version}"
 if ! command -v ollama &>/dev/null; then
   echo "Installing Ollama $DESIRED_OLLAMA..."
   curl -fsSL https://ollama.com/install.sh | OLLAMA_VERSION=$DESIRED_OLLAMA sh
-elif [ -n "$DESIRED_OLLAMA" ] && [ "$INSTALLED_OLLAMA" != "$DESIRED_OLLAMA" ]; then
-  echo "Upgrading Ollama from $INSTALLED_OLLAMA to $DESIRED_OLLAMA..."
-  curl -fsSL https://ollama.com/install.sh | OLLAMA_VERSION=$DESIRED_OLLAMA sh
+elif [ "$PRE_BAKED" = "true" ]; then
+  echo "Ollama already installed (pre-baked AMI)"
 else
-  echo "Ollama $INSTALLED_OLLAMA already installed (desired: $${DESIRED_OLLAMA:-latest})"
+  echo "Ollama binary present, ensuring version $DESIRED_OLLAMA..."
+  curl -fsSL https://ollama.com/install.sh | OLLAMA_VERSION=$DESIRED_OLLAMA sh
 fi
 
 # -----------------------------------------------------------------------------
