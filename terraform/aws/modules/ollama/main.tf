@@ -209,7 +209,7 @@ resource "aws_iam_instance_profile" "ollama" {
 
 resource "aws_launch_template" "ollama" {
   name_prefix   = "${var.name_prefix}-ollama-"
-  image_id      = data.aws_ami.ubuntu.id
+  image_id      = var.ami_id != null ? var.ami_id : data.aws_ami.ubuntu.id
   instance_type = var.instance_type
   key_name      = var.ssh_key_name
 

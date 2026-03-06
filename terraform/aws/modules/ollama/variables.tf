@@ -59,3 +59,9 @@ variable "ollama_version" {
   type        = string
   default     = ""
 }
+
+variable "ami_id" {
+  description = "Pre-baked AMI ID with NVIDIA drivers + Ollama. If null, falls back to latest Ubuntu 22.04."
+  type        = string
+  default     = null
+}

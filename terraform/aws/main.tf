@@ -228,6 +228,8 @@ resource "aws_iam_role_policy" "registry_irsa" {
           "s3:DeleteObject",
           "s3:ListBucket",
           "s3:GetBucketLocation",
+          "s3:ListBucketMultipartUploads",
+          "s3:AbortMultipartUpload",
         ]
         Resource = [
           aws_s3_bucket.registry[0].arn,
@@ -247,12 +249,15 @@ module "ollama" {
 
   name_prefix               = var.name_prefix
   vpc_id                    = module.network.vpc_id
-  subnet_id                 = module.network.public_subnet_ids[0]
+  subnet_id                 = module.network.public_subnet_ids[1]  # eu-west-1b (GPU capacity)
   compute_security_group_id = local.effective_compute_model == "eks" ? module.eks[0].node_security_group_id : module.security.ec2_security_group_id
   allowed_ssh_cidrs         = var.allowed_ssh_cidrs
   instance_type             = local.effective_ollama_instance_type
   volume_size               = local.effective_ollama_volume_size
   idle_timeout_minutes      = var.ollama_idle_timeout_minutes
+  use_spot                  = var.ollama_use_spot
+  ollama_version            = var.ollama_version
+  ami_id                    = var.ollama_ami_id
   ssh_key_name              = aws_key_pair.main.key_name
 }
 
@@ -261,6 +266,53 @@ resource "aws_iam_role_policy" "k3s_ollama_wake" {
   count = var.ollama_enabled && local.effective_compute_model == "k3s" ? 1 : 0
   name  = "${var.name_prefix}-k3s-ollama-wake"
   role  = aws_iam_role.k3s_node[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = "autoscaling:UpdateAutoScalingGroup"
+        Resource = module.ollama[0].asg_arn
+      },
+      {
+        Effect   = "Allow"
+        Action   = "autoscaling:DescribeAutoScalingGroups"
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+# IAM: let eve-api pod wake/query the Ollama ASG via IRSA (EKS mode only)
+resource "aws_iam_role" "api_ollama_wake_irsa" {
+  count = var.ollama_enabled && local.effective_compute_model == "eks" ? 1 : 0
+  name  = "${var.name_prefix}-api-ollama-wake-irsa"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Federated = module.eks[0].oidc_provider_arn
+        }
+        Action = "sts:AssumeRoleWithWebIdentity"
+        Condition = {
+          StringEquals = {
+            "${trimprefix(module.eks[0].oidc_provider_url, "https://")}:aud" = "sts.amazonaws.com"
+            "${trimprefix(module.eks[0].oidc_provider_url, "https://")}:sub" = "system:serviceaccount:eve:eve-api"
+          }
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "api_ollama_wake_irsa" {
+  count = var.ollama_enabled && local.effective_compute_model == "eks" ? 1 : 0
+  name  = "${var.name_prefix}-api-ollama-wake"
+  role  = aws_iam_role.api_ollama_wake_irsa[0].id
 
   policy = jsonencode({
     Version = "2012-10-17"

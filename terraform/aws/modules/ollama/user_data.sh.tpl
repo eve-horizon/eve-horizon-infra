@@ -22,11 +22,25 @@ PRIVATE_IP=$(curl -s -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" \
 
 echo "Instance: $INSTANCE_ID  Region: $REGION  ASG: $ASG_NAME  IP: $PRIVATE_IP"
 
+# Detect pre-baked AMI (NVIDIA + Ollama already installed)
+PRE_BAKED=false
+if command -v nvidia-smi &>/dev/null && command -v ollama &>/dev/null; then
+  PRE_BAKED=true
+  echo "Pre-baked AMI detected — skipping driver and Ollama install"
+fi
+
 # -----------------------------------------------------------------------------
-# 1. System packages
+# 1. System packages (skip apt-get update on pre-baked AMI)
 # -----------------------------------------------------------------------------
-apt-get update
-apt-get install -y awscli jq
+if [ "$PRE_BAKED" = "false" ]; then
+  apt-get update
+  apt-get install -y awscli jq
+else
+  # awscli and jq should already be present; install only if missing
+  for pkg in awscli jq; do
+    dpkg -s "$pkg" &>/dev/null || { apt-get update && apt-get install -y "$pkg"; break; }
+  done
+fi
 
 # -----------------------------------------------------------------------------
 # 1b. Register private IP in Route 53 (stable DNS for callers)
@@ -49,10 +63,15 @@ aws route53 change-resource-record-sets \
 echo "DNS registered: $DNS_NAME -> $PRIVATE_IP"
 
 # -----------------------------------------------------------------------------
-# 2. NVIDIA drivers (headless server, no X11)
+# 2. NVIDIA drivers (skip if already installed)
 # -----------------------------------------------------------------------------
-echo "Installing NVIDIA drivers..."
-apt-get install -y --no-install-recommends nvidia-headless-550-server nvidia-utils-550-server
+if ! command -v nvidia-smi &>/dev/null; then
+  echo "Installing NVIDIA drivers..."
+  [ "$PRE_BAKED" = "false" ] || { apt-get update; }
+  apt-get install -y --no-install-recommends nvidia-headless-550-server nvidia-utils-550-server
+else
+  echo "NVIDIA drivers already installed: $(nvidia-smi --query-gpu=driver_version --format=csv,noheader)"
+fi
 modprobe nvidia
 echo "GPU detected:"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
@@ -114,10 +133,19 @@ resize2fs "$DEVICE" 2>/dev/null || true
 echo "Mounted $DEVICE at /data/ollama ($(df -h /data/ollama | awk 'NR==2{print $2}'))"
 
 # -----------------------------------------------------------------------------
-# 4. Install Ollama
+# 4. Install Ollama (skip if correct version already installed)
 # -----------------------------------------------------------------------------
-echo "Installing Ollama..."
-curl -fsSL https://ollama.com/install.sh | OLLAMA_VERSION=${ollama_version} sh
+INSTALLED_OLLAMA=$(ollama --version 2>/dev/null | grep -oP '[\d.]+' || echo "none")
+DESIRED_OLLAMA="${ollama_version}"
+if ! command -v ollama &>/dev/null; then
+  echo "Installing Ollama $DESIRED_OLLAMA..."
+  curl -fsSL https://ollama.com/install.sh | OLLAMA_VERSION=$DESIRED_OLLAMA sh
+elif [ -n "$DESIRED_OLLAMA" ] && [ "$INSTALLED_OLLAMA" != "$DESIRED_OLLAMA" ]; then
+  echo "Upgrading Ollama from $INSTALLED_OLLAMA to $DESIRED_OLLAMA..."
+  curl -fsSL https://ollama.com/install.sh | OLLAMA_VERSION=$DESIRED_OLLAMA sh
+else
+  echo "Ollama $INSTALLED_OLLAMA already installed (desired: $${DESIRED_OLLAMA:-latest})"
+fi
 
 # -----------------------------------------------------------------------------
 # 5. Configure Ollama (bind to all interfaces, use EBS for models)
@@ -159,10 +187,15 @@ curl -sf http://localhost:11434/api/pull -d '{"name":"qwen3-vl:2b-instruct"}' | 
 # -----------------------------------------------------------------------------
 # 7. Idle auto-shutdown (checks every 5 min, shuts down after N min idle)
 # Sets ASG desired=0 then halts, so the box stays off until next wake.
-# Grace period = idle timeout + 15 min to allow time for first real request
-# after boot (NVIDIA drivers + Ollama install + model pulls can take 15+ min).
+# Grace period: pre-baked AMI = idle + 3 min, vanilla = idle + 15 min
 # -----------------------------------------------------------------------------
-GRACE_MINUTES=$(( IDLE_TIMEOUT_MINUTES + 15 ))
+if [ "$PRE_BAKED" = "true" ]; then
+  GRACE_MINUTES=$(( IDLE_TIMEOUT_MINUTES + 3 ))
+  echo "Pre-baked mode: grace period = $GRACE_MINUTES min"
+else
+  GRACE_MINUTES=$(( IDLE_TIMEOUT_MINUTES + 15 ))
+  echo "Vanilla mode: grace period = $GRACE_MINUTES min"
+fi
 
 cat > /usr/local/bin/ollama-idle-check.sh <<SCRIPT
 #!/bin/bash
