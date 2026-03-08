@@ -82,6 +82,7 @@ module "eks" {
   public_subnet_ids     = module.network.public_subnet_ids
   private_subnet_ids    = module.network.private_subnet_ids
   admin_principal_arns  = var.eks_admin_principal_arns
+  node_disk_size        = local.effective_root_volume_size
   default_instance_type = var.eks_default_instance_type
   default_min_size      = var.eks_default_min_size
   default_max_size      = var.eks_default_max_size
@@ -365,7 +366,12 @@ resource "aws_iam_role" "api_irsa" {
         Condition = {
           StringEquals = {
             "${trimprefix(module.eks[0].oidc_provider_url, "https://")}:aud" = "sts.amazonaws.com"
-            "${trimprefix(module.eks[0].oidc_provider_url, "https://")}:sub" = "system:serviceaccount:eve:eve-api"
+          }
+          StringLike = {
+            "${trimprefix(module.eks[0].oidc_provider_url, "https://")}:sub" = [
+              "system:serviceaccount:eve:eve-api",
+              "system:serviceaccount:eve:eve-worker",
+            ]
           }
         }
       }
