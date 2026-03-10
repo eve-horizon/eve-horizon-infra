@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: supabase-auth
+  namespace: eve
+  labels:
+    app.kubernetes.io/name: supabase-auth
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: supabase-auth
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: supabase-auth
+    spec:
+      containers:
+        - name: gotrue
+          image: supabase/gotrue:v2.185.0
+          ports:
+            - containerPort: 9999
+              name: http
+          env:
+            - name: GOTRUE_DB_DRIVER
+              value: postgres
+            - name: GOTRUE_DB_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: eve-app
+                  key: SUPABASE_AUTH_DATABASE_URL
+            - name: PORT
+              value: "9999"
+            - name: GOTRUE_API_PORT
+              value: "9999"
+            - name: GOTRUE_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: eve-app
+                  key: SUPABASE_JWT_SECRET
+            - name: GOTRUE_JWT_EXP
+              value: "3600"
+            - name: API_EXTERNAL_URL
+              value: "http://auth.eve.lvh.me"
+            - name: GOTRUE_SITE_URL
+              value: "http://sso.eve.lvh.me"
+            - name: GOTRUE_URI_ALLOW_LIST
+              value: ""
+            - name: GOTRUE_DISABLE_SIGNUP
+              value: "false"
+            - name: GOTRUE_EXTERNAL_EMAIL_ENABLED
+              value: "true"
+            - name: GOTRUE_MAILER_AUTOCONFIRM
+              value: "true"
+            - name: GOTRUE_MAILER_URLPATHS_CONFIRMATION
+              value: "/callback"
+            - name: GOTRUE_MAILER_URLPATHS_INVITE
+              value: "/callback"
+            - name: GOTRUE_MAILER_URLPATHS_RECOVERY
+              value: "/callback"
+            - name: GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE
+              value: "/callback"
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 9999
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 9999
+            initialDelaySeconds: 15
+            periodSeconds: 30

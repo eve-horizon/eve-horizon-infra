@@ -1,0 +1,16 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: supabase-auth
+  namespace: eve
+spec:
+  template:
+    spec:
+      containers:
+        - name: gotrue
+          env:
+            # URLs — production domain (override base placeholders)
+            - name: API_EXTERNAL_URL
+              value: "https://auth.example.com"
+            - name: GOTRUE_SITE_URL
+              value: "https://sso.example.com"

@@ -29,4 +29,10 @@ resources:
   - registry-deployment.yaml
   - registry-service.yaml
   - registry-ingress.yaml
+  - supabase-auth-deployment.yaml
+  - supabase-auth-service.yaml
+  - supabase-auth-ingress.yaml
+  - sso-deployment.yaml
+  - sso-service.yaml
+  - sso-ingress.yaml
   - db-migrate-job.yaml
