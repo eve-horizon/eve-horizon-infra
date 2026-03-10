@@ -1,0 +1,18 @@
+# Workload Identity — annotate eve KSAs to act as the storage GSA.
+# This lets pods authenticate to GCS natively via Application Default Credentials.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: eve-orchestrator
+  namespace: eve
+  annotations:
+    iam.gke.io/gcp-service-account: INSTANCE_PREFIX-eve-storage@GCP_PROJECT.iam.gserviceaccount.com
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: eve-agent-runtime
+  namespace: eve
+  annotations:
+    iam.gke.io/gcp-service-account: INSTANCE_PREFIX-eve-storage@GCP_PROJECT.iam.gserviceaccount.com

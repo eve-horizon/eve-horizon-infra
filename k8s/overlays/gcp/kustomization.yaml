@@ -3,8 +3,26 @@ kind: Kustomization
 resources:
   - ../../base
   - filestore-storageclass.yaml
+  - storage-workload-identity.yaml
 namespace: eve
 patches:
+  # Workload Identity annotations for eve-api and eve-worker KSAs (defined in base)
+  - target:
+      kind: ServiceAccount
+      name: eve-api
+    patch: |
+      - op: add
+        path: /metadata/annotations
+        value:
+          iam.gke.io/gcp-service-account: INSTANCE_PREFIX-eve-storage@GCP_PROJECT.iam.gserviceaccount.com
+  - target:
+      kind: ServiceAccount
+      name: eve-worker
+    patch: |
+      - op: add
+        path: /metadata/annotations
+        value:
+          iam.gke.io/gcp-service-account: INSTANCE_PREFIX-eve-storage@GCP_PROJECT.iam.gserviceaccount.com
   - path: api-ingress-patch.yaml
   - path: api-deployment-patch.yaml
   - path: agent-runtime-deployment-patch.yaml
@@ -24,7 +42,51 @@ patches:
       kind: Job
       metadata:
         name: eve-db-migrate
-  - path: remove-postgres-statefulset.yaml
-  - path: remove-postgres-service.yaml
-  - path: remove-postgres-secret.yaml
+  # Remove eve-app secret from kustomize — managed by setup.sh from secrets.env
+  - target:
+      kind: Secret
+      name: eve-app
+    patch: |
+      $patch: delete
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: eve-app
+  # Remove in-cluster postgres (using Cloud SQL instead)
+  - target:
+      kind: StatefulSet
+      name: postgres
+    patch: |
+      $patch: delete
+      apiVersion: apps/v1
+      kind: StatefulSet
+      metadata:
+        name: postgres
+  - target:
+      kind: Service
+      name: postgres
+    patch: |
+      $patch: delete
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: postgres
+  - target:
+      kind: Secret
+      name: eve-postgres
+    patch: |
+      $patch: delete
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: eve-postgres
+  # Remove registry resources (use external registry on GCP)
   - path: remove-registry-resources.yaml
+  # Set org filesystem PVC to Filestore (RWX required, GKE default is PD which is RWO only)
+  - target:
+      kind: PersistentVolumeClaim
+      name: eve-org-fs-org-default
+    patch: |
+      - op: add
+        path: /spec/storageClassName
+        value: filestore-rwx

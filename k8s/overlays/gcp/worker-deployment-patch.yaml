@@ -4,19 +4,49 @@ metadata:
   name: eve-worker
   namespace: eve
 spec:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   template:
     spec:
+      terminationGracePeriodSeconds: 60
       containers:
         - name: worker
           image: public.ecr.aws/w7c4v0w3/eve-horizon/worker:latest
           imagePullPolicy: IfNotPresent
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sh", "-c", "sleep 5"]
           env:
             - name: DATABASE_URL
-              value: postgres://eve:REPLACE_ME@db.example.com:5432/eve
+              value: ""
+              valueFrom:
+                secretKeyRef:
+                  name: eve-app
+                  key: DATABASE_URL
+            - name: EVE_STORAGE_BACKEND
+              value: "gcs"
+            - name: EVE_STORAGE_REGION
+              value: "YOUR_REGION"
+            - name: EVE_STORAGE_INTERNAL_BUCKET
+              value: "INSTANCE_PREFIX-eve-internal"
+            - name: EVE_STORAGE_ORG_BUCKET_PREFIX
+              value: "INSTANCE_PREFIX-eve-org"
             - name: EVE_RUNNER_IMAGE
               value: public.ecr.aws/w7c4v0w3/eve-horizon/worker-full:latest
+            - name: EVE_TOOLCHAIN_IMAGE_PREFIX
+              value: "public.ecr.aws/w7c4v0w3/eve-horizon/toolchain-"
+            - name: EVE_TOOLCHAIN_IMAGE_TAG
+              value: "latest"
             - name: EVE_DEFAULT_DOMAIN
               value: apps.example.com
+            - name: EVE_DEFAULT_TLS_CLUSTER_ISSUER
+              value: letsencrypt-prod
+            - name: EVE_DEFAULT_INGRESS_CLASS
+              value: nginx
             - name: EVE_COMPUTE_MODEL
               value: gke
             - name: EVE_APP_NODE_SELECTOR_KEY
@@ -29,7 +59,3 @@ spec:
               value: apps
             - name: EVE_APP_TAINT_EFFECT
               value: NoSchedule
-            - name: OTEL_ENABLED
-              value: "true"
-            - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: http://otel-collector.eve.svc.cluster.local:4318

@@ -4,11 +4,34 @@ metadata:
   name: eve-agent-runtime
   namespace: eve
 spec:
+  updateStrategy:
+    type: RollingUpdate
   template:
     spec:
+      serviceAccountName: eve-agent-runtime
+      terminationGracePeriodSeconds: 30
       containers:
         - name: agent-runtime
-          image: public.ecr.aws/w7c4v0w3/eve-horizon/agent-runtime:staging
+          image: public.ecr.aws/w7c4v0w3/eve-horizon/agent-runtime:latest
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sh", "-c", "sleep 5"]
+          env:
+            - name: DATABASE_URL
+              value: ""
+              valueFrom:
+                secretKeyRef:
+                  name: eve-app
+                  key: DATABASE_URL
+            - name: EVE_STORAGE_BACKEND
+              value: "gcs"
+            - name: EVE_STORAGE_ORG_BUCKET_PREFIX
+              value: "INSTANCE_PREFIX-eve-org"
+            - name: EVE_TOOLCHAIN_IMAGE_PREFIX
+              value: "public.ecr.aws/w7c4v0w3/eve-horizon/toolchain-"
+            - name: EVE_TOOLCHAIN_IMAGE_TAG
+              value: "latest"
       # Schedule onto agents spot pool
       tolerations:
         - key: pool
