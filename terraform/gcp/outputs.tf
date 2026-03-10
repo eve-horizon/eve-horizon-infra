@@ -41,6 +41,21 @@ output "ollama_mig_name" {
   value       = var.ollama_enabled ? module.ollama[0].mig_name : null
 }
 
+output "storage_service_account_email" {
+  description = "Storage service account email (for Workload Identity annotation)"
+  value       = module.storage.service_account_email
+}
+
+output "storage_internal_bucket" {
+  description = "GCS bucket for eve-internal platform storage"
+  value       = module.storage.internal_bucket_name
+}
+
+output "storage_org_bucket_prefix" {
+  description = "GCS bucket prefix for per-org storage (buckets created dynamically)"
+  value       = module.storage.org_bucket_prefix
+}
+
 output "next_steps" {
   description = "Helpful next steps after deployment"
   value       = <<-EOT

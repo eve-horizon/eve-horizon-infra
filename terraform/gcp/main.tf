@@ -109,6 +109,19 @@ module "dns" {
 }
 
 # -----------------------------------------------------------------------------
+# Storage Module
+# GCS buckets + Workload Identity for native object storage
+# -----------------------------------------------------------------------------
+
+module "storage" {
+  source = "./modules/storage"
+
+  name_prefix = var.name_prefix
+  location    = local.effective_region
+  project_id  = var.gcp_project_id
+}
+
+# -----------------------------------------------------------------------------
 # Ollama GPU Host Module (optional)
 # On-demand spot GPU instance running Ollama
 # -----------------------------------------------------------------------------
