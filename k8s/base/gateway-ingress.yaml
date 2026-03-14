@@ -10,13 +10,6 @@ spec:
     - host: api.eve.lvh.me
       http:
         paths:
-          - path: /integrations/slack
-            pathType: Prefix
-            backend:
-              service:
-                name: eve-gateway
-                port:
-                  number: 4820
           - path: /gateway/providers
             pathType: Prefix
             backend:
