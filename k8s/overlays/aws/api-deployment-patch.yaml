@@ -18,10 +18,18 @@ spec:
                   key: DATABASE_URL
             - name: API_PORT
               value: "4701"
+            - name: EVE_API_URL
+              value: "https://api.eve.example.com"
             - name: WORKER_URL
               value: http://eve-worker.eve.svc.cluster.local:4749
+            - name: EVE_GATEWAY_URL
+              value: "http://eve-gateway.eve.svc.cluster.local:4820"
+            - name: EVE_PUBLIC_API_URL
+              value: "https://api.eve.example.com"
+            - name: EVE_DEFAULT_DOMAIN
+              value: "eve.example.com"
             - name: EVE_REGISTRY_HOST
-              value: registry.eh1.incept5.dev
+              value: registry.eve.example.com
             - name: EVE_REGISTRY_SIGNING_KEY
               valueFrom:
                 secretKeyRef:
@@ -38,6 +46,6 @@ spec:
             - name: EVE_STORAGE_REGION
               value: "eu-west-1"
             - name: EVE_STORAGE_INTERNAL_BUCKET
-              value: "eh1-eve-internal"
+              value: "eve-internal"
             - name: EVE_STORAGE_ORG_BUCKET_PREFIX
-              value: "eh1-eve-org"
+              value: "eve-org"
