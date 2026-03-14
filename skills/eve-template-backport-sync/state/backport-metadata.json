@@ -3,8 +3,8 @@
   "source_branch": "main",
   "template_repo": "../../eve-horizon/eve-horizon-infra",
   "template_branch": "main",
-  "last_checked_commit": null,
-  "last_checked_at": null,
+  "last_checked_commit": "7c2676df9050d2b5328bf39b3325c14963b6ed5e",
+  "last_checked_at": "2026-03-08T19:44:01Z",
   "policy": {
     "always": [
       "k8s/base/**",
@@ -45,5 +45,26 @@
       "to": "k8s/overlays/aws-eks/"
     }
   ],
-  "history": []
+  "history": [
+    {
+      "checked_at": "2026-02-18T09:18:35Z",
+      "to_commit": "8f15d439922b386ac3bf681569e4ae1d16c662db"
+    },
+    {
+      "checked_at": "2026-02-26T14:26:47Z",
+      "to_commit": "f84259dbe32a8d2b4d73828eb7896a111d9d7bbb"
+    },
+    {
+      "checked_at": "2026-03-06T12:09:25Z",
+      "to_commit": "dbc5973ca8eda84bd3efa9e794fdf9a605569eac"
+    },
+    {
+      "checked_at": "2026-03-06T16:44:28Z",
+      "to_commit": "e8f62d58d4362dd62f09ba4cbf67172494f08471"
+    },
+    {
+      "checked_at": "2026-03-08T19:44:01Z",
+      "to_commit": "7c2676df9050d2b5328bf39b3325c14963b6ed5e"
+    }
+  ]
 }
