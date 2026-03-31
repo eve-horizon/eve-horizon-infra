@@ -8,7 +8,7 @@ spec:
     spec:
       containers:
         - name: worker
-          image: public.ecr.aws/w7c4v0w3/eve-horizon/worker:staging
+          image: public.ecr.aws/w7c4v0w3/eve-horizon/worker:0.1.132
           securityContext:
             runAsUser: 0
             runAsGroup: 0
@@ -34,7 +34,7 @@ spec:
             - name: EVE_BUILDKIT_ADDR
               value: tcp://buildkitd.eve.svc:1234
             - name: EVE_RUNNER_IMAGE
-              value: "public.ecr.aws/w7c4v0w3/eve-horizon/worker:staging"
+              value: "public.ecr.aws/w7c4v0w3/eve-horizon/worker:0.1.132"
             - name: EVE_TOOLCHAIN_IMAGE_PREFIX
               value: "public.ecr.aws/w7c4v0w3/eve-horizon/toolchain-"
             - name: EVE_TOOLCHAIN_IMAGE_TAG
@@ -49,7 +49,30 @@ spec:
               value: "4749"
             - name: EVE_DEFAULT_DOMAIN
               value: "eh1.incept5.dev"
+            - name: EVE_COMPUTE_MODEL
+              value: "eks"
             - name: EVE_DEFAULT_INGRESS_CLASS
-              value: "traefik"
+              value: "nginx"
+            - name: EVE_APP_NODE_SELECTOR_KEY
+              value: role
+            - name: EVE_APP_NODE_SELECTOR_VALUE
+              value: apps
+            - name: EVE_APP_TAINT_KEY
+              value: role
+            - name: EVE_APP_TAINT_VALUE
+              value: apps
+            - name: EVE_APP_TAINT_EFFECT
+              value: NoSchedule
             - name: EVE_DEFAULT_TLS_CLUSTER_ISSUER
               value: "letsencrypt-prod"
+            - name: EVE_REGISTRY_HOST
+              value: "registry.eh1.incept5.dev"
+            - name: EVE_PLATFORM_INGRESS_HOSTNAME
+              value: "ingress.eh1.incept5.dev"
+            - name: EVE_PLATFORM_INGRESS_IP
+              value: "52.209.1.195,52.17.16.223"
+            - name: EVE_INTERNAL_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: eve-app
+                  key: EVE_INTERNAL_API_KEY
