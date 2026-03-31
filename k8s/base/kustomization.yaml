@@ -4,6 +4,7 @@ resources:
   - namespace.yaml
   - api-rbac.yaml
   - app-secret.yaml
+  - auth-bootstrap-configmap.yaml
   - postgres-secret.yaml
   - postgres-statefulset.yaml
   - buildkitd-pvc.yaml
@@ -13,8 +14,17 @@ resources:
   - api-deployment.yaml
   - api-service.yaml
   - api-ingress.yaml
+  - mailpit-deployment.yaml
+  - mailpit-service.yaml
+  - supabase-auth-deployment.yaml
+  - supabase-auth-service.yaml
+  - supabase-auth-ingress.yaml
+  - sso-deployment.yaml
+  - sso-service.yaml
+  - sso-ingress.yaml
   - orchestrator-deployment.yaml
   - orchestrator-service.yaml
+  - orchestrator-rbac.yaml
   - worker-rbac.yaml
   - worker-deployment.yaml
   - worker-service.yaml
@@ -24,18 +34,9 @@ resources:
   - gateway-deployment.yaml
   - gateway-service.yaml
   - gateway-ingress.yaml
-  - dashboard-deployment.yaml
-  - dashboard-service.yaml
-  - dashboard-ingress.yaml
   - registry-configmap.yaml
   - registry-serviceaccount.yaml
   - registry-deployment.yaml
   - registry-service.yaml
   - registry-ingress.yaml
-  - supabase-auth-deployment.yaml
-  - supabase-auth-service.yaml
-  - supabase-auth-ingress.yaml
-  - sso-deployment.yaml
-  - sso-service.yaml
-  - sso-ingress.yaml
   - db-migrate-job.yaml

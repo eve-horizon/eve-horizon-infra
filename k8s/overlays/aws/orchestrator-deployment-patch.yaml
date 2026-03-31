@@ -35,3 +35,7 @@ spec:
               value: "true"
             - name: EVE_MANAGED_DB_LOCAL_SEED
               value: "true"
+            - name: EVE_ENV_HEALTH_ENABLED
+              value: "true"
+            - name: EVE_ENV_HEALTH_STABLE_TICKS
+              value: "3"
