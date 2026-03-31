@@ -34,7 +34,7 @@ on:
     types: [deploy]
 
 permissions:
-  contents: read
+  contents: write
   packages: read
 
 env:
@@ -52,6 +52,9 @@ jobs:
       # -----------------------------------------------------------------------
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       # -----------------------------------------------------------------------
       # Read platform config
@@ -240,7 +243,44 @@ jobs:
 
           echo "=== Updated patch files ==="
           grep -rn "image:" ${OVERLAY_DIR}/ || true
-          grep -rn "EVE_RUNNER_IMAGE" ${OVERLAY_DIR}/ || true
+          grep -rn -A1 "EVE_RUNNER_IMAGE" ${OVERLAY_DIR}/ || true
+
+      # -----------------------------------------------------------------------
+      # Update platform.yaml with effective version
+      # -----------------------------------------------------------------------
+      - name: Update platform config version
+        env:
+          VERSION: ${{ steps.version.outputs.effective }}
+        run: |
+          yq -i ".platform.version = \"${VERSION}\"" config/platform.yaml
+          echo "Updated config/platform.yaml to version ${VERSION}"
+
+      # -----------------------------------------------------------------------
+      # Commit updated image tags back to repo
+      #
+      # The deploy workflow modifies patch files and platform.yaml in the CI
+      # working copy to set the deployed version. Without committing these
+      # changes back, the repo's committed files contain stale image tags.
+      # Any subsequent local `kubectl apply` from the repo would revert
+      # services to the stale version.
+      # -----------------------------------------------------------------------
+      - name: Commit updated image tags
+        env:
+          VERSION: ${{ steps.version.outputs.effective }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add config/platform.yaml "k8s/overlays/"
+          if git diff --cached --quiet; then
+            echo "No image tag changes to commit"
+          else
+            git commit -m "ci: update image tags to ${VERSION}"
+            # Pull-rebase in case another deploy committed in parallel
+            git pull --rebase origin main || true
+            git push origin HEAD:main
+            echo "Committed and pushed image tag updates for ${VERSION}"
+          fi
 
       # -----------------------------------------------------------------------
       # Run database migrations
@@ -299,7 +339,11 @@ jobs:
         run: |
           kubectl kustomize k8s/overlays/${OVERLAY} > /tmp/manifests.yaml
 
-          echo "=== Generated manifests (ingress check) ==="
+          echo "=== Generated manifests — image tags ==="
+          grep "image:.*eve-horizon" /tmp/manifests.yaml || true
+          grep -A1 "EVE_RUNNER_IMAGE" /tmp/manifests.yaml || true
+
+          echo "=== Generated manifests — ingress check ==="
           grep -A 10 "kind: Ingress" /tmp/manifests.yaml || true
 
           kubectl apply -f /tmp/manifests.yaml --server-side --force-conflicts
