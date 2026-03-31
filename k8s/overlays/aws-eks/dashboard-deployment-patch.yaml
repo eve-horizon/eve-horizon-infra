@@ -1,0 +1,14 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: eve-dashboard
+  namespace: eve
+spec:
+  template:
+    spec:
+      imagePullSecrets:
+        - name: eve-registry
+      containers:
+        - name: dashboard
+          image: ghcr.io/eve-horizon/dashboard:latest
+          imagePullPolicy: IfNotPresent

@@ -177,6 +177,7 @@ declare -A SERVICE_MAP=(
   [worker]="deployment/eve-worker"
   [orchestrator]="deployment/eve-orchestrator"
   [gateway]="deployment/eve-gateway"
+  [dashboard]="deployment/eve-dashboard"
   [agent-runtime]="statefulset/eve-agent-runtime"
   [buildkitd]="deployment/buildkitd"
 )
@@ -186,11 +187,12 @@ declare -A SERVICE_LABELS=(
   [worker]="app.kubernetes.io/name=eve-worker"
   [orchestrator]="app.kubernetes.io/name=eve-orchestrator"
   [gateway]="app.kubernetes.io/name=eve-gateway"
+  [dashboard]="app.kubernetes.io/name=eve-dashboard"
   [agent-runtime]="app.kubernetes.io/name=eve-agent-runtime"
   [buildkitd]="app.kubernetes.io/name=buildkitd"
 )
 
-VALID_SERVICES="api, worker, orchestrator, gateway, agent-runtime"
+VALID_SERVICES="api, worker, orchestrator, gateway, dashboard, agent-runtime"
 
 resolve_service() {
   local svc="${1:-}"

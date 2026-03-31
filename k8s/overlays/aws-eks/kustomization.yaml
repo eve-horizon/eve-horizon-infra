@@ -14,6 +14,8 @@ patches:
   - path: worker-deployment-patch.yaml
   - path: api-ingress-patch.yaml
   - path: gateway-ingress-patch.yaml
+  - path: dashboard-deployment-patch.yaml
+  - path: dashboard-ingress-patch.yaml
   - path: registry-configmap-patch.yaml
   - path: registry-serviceaccount-patch.yaml
   - path: registry-ingress-patch.yaml
