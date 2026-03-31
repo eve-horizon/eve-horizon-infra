@@ -185,7 +185,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          SERVICES=(api gateway orchestrator worker agent-runtime sso)
+          SERVICES=(api gateway orchestrator worker agent-runtime sso dashboard)
           MAX_ATTEMPTS=30
 
           for SERVICE in "${SERVICES[@]}"; do
@@ -230,7 +230,7 @@ jobs:
           fi
 
           # Normalize service image references to the configured registry + version.
-          for SERVICE in api gateway orchestrator worker agent-runtime sso; do
+          for SERVICE in api gateway orchestrator worker agent-runtime sso dashboard; do
             for PATCH_FILE in "${PATCH_FILES[@]}"; do
               perl -0pi -e "s|image:\\s*[^\\s\"']*/${SERVICE}:[^\\s\"']+|image: ${REGISTRY}/${SERVICE}:${VERSION}|g" "$PATCH_FILE"
             done
@@ -361,7 +361,7 @@ jobs:
           DEPLOY_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           GIT_SHA="$(git rev-parse HEAD)"
 
-          for DEPLOY in eve-api eve-gateway eve-orchestrator eve-worker eve-sso; do
+          for DEPLOY in eve-api eve-gateway eve-orchestrator eve-worker eve-sso eve-dashboard; do
             kubectl -n $NAMESPACE annotate deployment/$DEPLOY --overwrite \
               eve-horizon.dev/version="${VERSION}" \
               eve-horizon.dev/git-sha="${GIT_SHA}" \
@@ -392,6 +392,9 @@ jobs:
 
       - name: Wait for SSO rollout
         run: kubectl -n $NAMESPACE rollout status deployment/eve-sso --timeout=180s
+
+      - name: Wait for Dashboard rollout
+        run: kubectl -n $NAMESPACE rollout status deployment/eve-dashboard --timeout=180s
 
       - name: Wait for Agent Runtime rollout
         run: kubectl -n $NAMESPACE rollout status statefulset/eve-agent-runtime --timeout=180s
@@ -428,7 +431,7 @@ jobs:
           kubectl -n $NAMESPACE get events --sort-by=.lastTimestamp | tail -n 50 || true
           echo ""
           echo "=== Deployment descriptions ==="
-          for DEPLOY in eve-api eve-gateway eve-orchestrator eve-worker eve-sso; do
+          for DEPLOY in eve-api eve-gateway eve-orchestrator eve-worker eve-sso eve-dashboard; do
             echo "--- $DEPLOY ---"
             kubectl -n $NAMESPACE describe deployment/$DEPLOY 2>/dev/null | tail -n 20 || true
           done
@@ -447,6 +450,7 @@ jobs:
           kubectl -n $NAMESPACE rollout undo deployment/eve-orchestrator || true
           kubectl -n $NAMESPACE rollout undo deployment/eve-worker || true
           kubectl -n $NAMESPACE rollout undo deployment/eve-sso || true
+          kubectl -n $NAMESPACE rollout undo deployment/eve-dashboard || true
           kubectl -n $NAMESPACE rollout undo statefulset/eve-agent-runtime || true
 
       # -----------------------------------------------------------------------
