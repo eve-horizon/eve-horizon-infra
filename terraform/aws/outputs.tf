@@ -100,6 +100,11 @@ output "db_snapshots_bucket_name" {
   value       = var.compute_model == "eks" ? aws_s3_bucket.db_snapshots[0].bucket : null
 }
 
+output "stable_egress_node_group_name" {
+  description = "Name of the egress-pool managed node group. Use with `aws eks describe-nodegroup` to list nodes / public IPs. Null when stable egress is disabled."
+  value       = local.stable_egress_eligible ? module.eks_egress_pool[0].node_group_name : null
+}
+
 output "next_steps" {
   description = "Helpful next steps after deployment"
   value = var.compute_model == "eks" ? (

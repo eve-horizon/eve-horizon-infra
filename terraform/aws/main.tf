@@ -16,6 +16,10 @@ locals {
   storage_org_bucket_prefix      = "${var.name_prefix}-eve-org"
   storage_app_bucket_prefix      = "${var.name_prefix}-eve-app"
   db_snapshots_bucket_name       = "${var.name_prefix}-db-snapshots-${data.aws_caller_identity.current.account_id}"
+  stable_egress_eligible         = var.stable_egress_enabled && local.effective_compute_model == "eks"
+  stable_egress_subnet_ids = var.stable_egress_subnet_ids == null ? [module.network.public_subnet_ids[1]] : (
+    length(var.stable_egress_subnet_ids) > 0 ? var.stable_egress_subnet_ids : [module.network.public_subnet_ids[1]]
+  )
 }
 
 # -----------------------------------------------------------------------------
@@ -549,4 +553,31 @@ module "dns" {
   ec2_public_ip       = local.effective_compute_model == "k3s" ? module.ec2[0].public_ip : null
   ingress_lb_dns_name = var.ingress_lb_dns_name
   ingress_lb_zone_id  = var.ingress_lb_zone_id
+}
+
+# -----------------------------------------------------------------------------
+# Stable Egress (optional, EKS only)
+# -----------------------------------------------------------------------------
+# When enabled (`stable_egress_enabled = true` AND `compute_model = "eks"`),
+# provisions a managed EKS node group in public subnets, labeled and tainted
+# so only services with `x-eve.networking.egress: stable` schedule onto it.
+# Apps run with `hostNetwork: true` and exit via the node's own public IPv4 /
+# IGW path, preserving UDP source-port mappings end-to-end.
+# Replaces the v1 Tailscale exit-node sidecar design — see
+# docs/plans/app-stable-egress-v2-plan.md.
+
+module "eks_egress_pool" {
+  count  = local.stable_egress_eligible ? 1 : 0
+  source = "./modules/eks-egress-pool"
+
+  name_prefix            = var.name_prefix
+  cluster_name           = module.eks[0].cluster_name
+  node_role_arn          = module.eks[0].node_role_arn
+  node_security_group_id = module.eks[0].node_security_group_id
+  subnet_ids             = local.stable_egress_subnet_ids
+  instance_types         = var.stable_egress_instance_types
+  capacity_type          = var.stable_egress_capacity_type
+  min_size               = var.stable_egress_min_size
+  max_size               = var.stable_egress_max_size
+  desired_size           = var.stable_egress_desired_size
 }

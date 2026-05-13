@@ -307,3 +307,61 @@ variable "ollama_ami_id" {
   type        = string
   default     = null
 }
+
+# -----------------------------------------------------------------------------
+# Stable Egress (optional, EKS only)
+# -----------------------------------------------------------------------------
+# Provisions an EKS managed node group in public subnets so apps that opt into
+# stable egress (manifest: `x-eve.networking.egress: stable`) can run with
+# `hostNetwork: true` and exit via the node's own public IPv4 / Internet
+# Gateway path. The 1:1 IGW translation preserves UDP source ports across
+# destinations — what STUN-discovered NAT hole-punching expects.
+#
+# All resources are gated by `stable_egress_enabled = true` AND
+# `compute_model = "eks"`. With the default disabled flag, no AWS resources
+# are created and platform behavior is unchanged.
+#
+# Phase 1 (POC) defaults: single node, single AZ (eu-west-1b). Phase 2
+# (separate plan) bumps capacity, adds multi-AZ, and pre-allocates an EIP pool.
+
+variable "stable_egress_enabled" {
+  description = "Create the egress-pool managed node group. Apps with `x-eve.networking.egress: stable` schedule onto it; everything else is unaffected."
+  type        = bool
+  default     = false
+}
+
+variable "stable_egress_subnet_ids" {
+  description = "Public subnet IDs the egress node group can schedule into. When null, defaults to `[public_subnet_ids[1]]` (eu-west-1b — the AZ already pinned for org-fs / agents)."
+  type        = list(string)
+  default     = null
+}
+
+variable "stable_egress_instance_types" {
+  description = "EC2 instance types for the egress node group. POC default `t3.medium` is plenty for pvscam-class UDP workloads; bump in Phase 2 when sizing for aggregate throughput."
+  type        = list(string)
+  default     = ["t3.medium"]
+}
+
+variable "stable_egress_capacity_type" {
+  description = "ON_DEMAND or SPOT. POC stays on ON_DEMAND so a single node isn't subject to spot interruption mid-camera-poll."
+  type        = string
+  default     = "ON_DEMAND"
+}
+
+variable "stable_egress_min_size" {
+  description = "Minimum size for the egress node group. POC default 1; Phase 2 bumps to ≥2 for HA."
+  type        = number
+  default     = 1
+}
+
+variable "stable_egress_max_size" {
+  description = "Maximum size for the egress node group. POC default 1 because Phase 1 also fail-fasts on app replicas > 1; Phase 2 sizes for peak."
+  type        = number
+  default     = 1
+}
+
+variable "stable_egress_desired_size" {
+  description = "Desired size for the egress node group."
+  type        = number
+  default     = 1
+}

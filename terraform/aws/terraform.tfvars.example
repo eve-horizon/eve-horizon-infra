@@ -74,3 +74,20 @@ deletion_protection = false
 # ollama_disk_size_gb         = 100
 # ollama_idle_timeout_minutes = 30
 # ollama_ami_id               = "ami-xxxxxxxxx"  # Pre-baked AMI (NVIDIA + Ollama). Omit for vanilla Ubuntu.
+
+# --- Stable Egress (optional, EKS only) ---
+# Provisions an EKS managed node group in public subnets so apps with
+# `x-eve.networking.egress: stable` run with `hostNetwork: true` and exit
+# via the node's own public IPv4 / Internet Gateway path. Preserves UDP
+# source-port mappings end-to-end. Required for camera relay / P2P / STUN-
+# discovered NAT workloads (pvscam-class).
+#
+# POC defaults: 1 ON_DEMAND t3.medium pinned to eu-west-1b.
+#
+# stable_egress_enabled        = true
+# stable_egress_instance_types = ["t3.medium"]
+# stable_egress_capacity_type  = "ON_DEMAND"
+# stable_egress_min_size       = 1
+# stable_egress_max_size       = 1
+# stable_egress_desired_size   = 1
+# stable_egress_subnet_ids     = ["subnet-xxx"]   # default: [public_subnet_ids[1]] (eu-west-1b)
