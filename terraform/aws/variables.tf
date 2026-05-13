@@ -365,3 +365,24 @@ variable "stable_egress_desired_size" {
   type        = number
   default     = 1
 }
+
+# -----------------------------------------------------------------------------
+# SES Feedback (Lane 3.1 of magic-link silent-drop plan)
+# -----------------------------------------------------------------------------
+# Provisions an SES configuration set + SNS topic + HTTPS subscription so
+# the Eve API can correlate every outbound send with bounce/complaint
+# events and pre-flight the account-level suppression list before sending.
+# SES is operated out of us-west-2 regardless of the cluster region — the
+# module uses the `aws.us_west_2` provider alias.
+
+variable "ses_feedback_endpoint" {
+  description = "HTTPS webhook URL the SES feedback SNS topic subscribes to. The Eve API confirms the subscription and persists events into the email_delivery_events table."
+  type        = string
+  default     = "https://api.eh1.incept5.dev/webhooks/ses-feedback"
+}
+
+variable "ses_configuration_set_name" {
+  description = "Name of the SESv2 configuration set. Eve API attaches this to outbound SMTP via the X-SES-CONFIGURATION-SET header."
+  type        = string
+  default     = "eve-default"
+}

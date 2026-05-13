@@ -75,6 +75,12 @@ deletion_protection = false
 # ollama_idle_timeout_minutes = 30
 # ollama_ami_id               = "ami-xxxxxxxxx"  # Pre-baked AMI (NVIDIA + Ollama). Omit for vanilla Ubuntu.
 
+# --- SES Feedback (Lane 3.1 of magic-link silent-drop plan) ---
+# Provisioned in us-west-2 via the `aws.us_west_2` provider alias.
+# Override the webhook URL per environment (defaults to the staging API).
+# ses_feedback_endpoint      = "https://api.eh1.incept5.dev/webhooks/ses-feedback"
+# ses_configuration_set_name = "eve-default"
+
 # --- Stable Egress (optional, EKS only) ---
 # Provisions an EKS managed node group in public subnets so apps with
 # `x-eve.networking.egress: stable` run with `hostNetwork: true` and exit

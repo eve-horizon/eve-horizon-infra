@@ -39,6 +39,23 @@ provider "aws" {
   }
 }
 
+# us-west-2 is SES's home region for Eve — the SMTP host the API mailer
+# points at lives in us-west-2 regardless of where the EKS cluster runs.
+# SES configuration sets, the SNS feedback topic, and its subscription must
+# all be colocated there.
+provider "aws" {
+  alias  = "us_west_2"
+  region = "us-west-2"
+
+  default_tags {
+    tags = {
+      Project     = var.project_name
+      Environment = var.environment
+      ManagedBy   = "terraform"
+    }
+  }
+}
+
 data "aws_eks_cluster_auth" "main" {
   count = local.effective_compute_model == "eks" ? 1 : 0
   name  = module.eks[0].cluster_name

@@ -100,6 +100,21 @@ output "db_snapshots_bucket_name" {
   value       = var.compute_model == "eks" ? aws_s3_bucket.db_snapshots[0].bucket : null
 }
 
+output "ses_configuration_set_name" {
+  description = "Name of the SESv2 configuration set the Eve API attaches to outbound SMTP via X-SES-CONFIGURATION-SET."
+  value       = module.ses_feedback.configuration_set_name
+}
+
+output "ses_feedback_topic_arn" {
+  description = "SNS topic ARN receiving SES bounce/complaint/delivery/reject events. Set on the API as EVE_SES_FEEDBACK_TOPIC_ARN so the webhook handler can reject SNS messages from unexpected topics."
+  value       = module.ses_feedback.topic_arn
+}
+
+output "ses_feedback_subscription_arn" {
+  description = "ARN of the HTTPS subscription. Stays in PendingConfirmation until the Eve API webhook confirms it."
+  value       = module.ses_feedback.subscription_arn
+}
+
 output "stable_egress_node_group_name" {
   description = "Name of the egress-pool managed node group. Use with `aws eks describe-nodegroup` to list nodes / public IPs. Null when stable egress is disabled."
   value       = local.stable_egress_eligible ? module.eks_egress_pool[0].node_group_name : null
