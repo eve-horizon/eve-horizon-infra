@@ -439,6 +439,8 @@ resource "aws_iam_role_policy" "api_storage" {
           "s3:PutBucketCors",
           "s3:PutBucketPolicy",
           "s3:GetBucketPolicy",
+          "s3:GetBucketPublicAccessBlock",
+          "s3:PutBucketPublicAccessBlock",
           "s3:ListBucketMultipartUploads",
           "s3:AbortMultipartUpload",
         ]
