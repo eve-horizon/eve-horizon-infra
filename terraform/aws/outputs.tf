@@ -80,6 +80,21 @@ output "storage_org_bucket_prefix" {
   value       = local.storage_org_bucket_prefix
 }
 
+output "storage_app_bucket_prefix" {
+  description = "S3 bucket prefix for per-app object buckets (buckets created dynamically)"
+  value       = local.storage_app_bucket_prefix
+}
+
+output "app_buckets_access_key_id" {
+  description = "Access key ID for shared app-bucket credentials (EKS mode only)"
+  value       = var.compute_model == "eks" ? aws_iam_access_key.app_buckets[0].id : null
+}
+
+output "app_buckets_secret_access_key_sha256" {
+  description = "SHA-256 fingerprint of the shared app-bucket secret access key (EKS mode only)"
+  value       = var.compute_model == "eks" ? nonsensitive(sha256(aws_iam_access_key.app_buckets[0].secret)) : null
+}
+
 output "db_snapshots_bucket_name" {
   description = "S3 bucket for managed DB snapshots"
   value       = var.compute_model == "eks" ? aws_s3_bucket.db_snapshots[0].bucket : null

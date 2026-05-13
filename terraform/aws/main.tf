@@ -14,6 +14,7 @@ locals {
   registry_bucket_name           = "${var.name_prefix}-registry-${data.aws_caller_identity.current.account_id}"
   storage_internal_bucket        = "${var.name_prefix}-eve-internal"
   storage_org_bucket_prefix      = "${var.name_prefix}-eve-org"
+  storage_app_bucket_prefix      = "${var.name_prefix}-eve-app"
   db_snapshots_bucket_name       = "${var.name_prefix}-db-snapshots-${data.aws_caller_identity.current.account_id}"
 }
 
@@ -426,6 +427,27 @@ resource "aws_iam_role_policy" "api_storage" {
         ]
       },
       {
+        Sid    = "AppBuckets"
+        Effect = "Allow"
+        Action = [
+          "s3:CreateBucket",
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject",
+          "s3:ListBucket",
+          "s3:GetBucketLocation",
+          "s3:PutBucketCors",
+          "s3:PutBucketPolicy",
+          "s3:GetBucketPolicy",
+          "s3:ListBucketMultipartUploads",
+          "s3:AbortMultipartUpload",
+        ]
+        Resource = [
+          "arn:aws:s3:::${local.storage_app_bucket_prefix}-*",
+          "arn:aws:s3:::${local.storage_app_bucket_prefix}-*/*",
+        ]
+      },
+      {
         Sid    = "DbSnapshotsBucket"
         Effect = "Allow"
         Action = [
@@ -478,7 +500,7 @@ module "ollama" {
 
   name_prefix               = var.name_prefix
   vpc_id                    = module.network.vpc_id
-  subnet_id                 = module.network.public_subnet_ids[1]  # eu-west-1b (GPU capacity)
+  subnet_id                 = module.network.public_subnet_ids[1] # eu-west-1b (GPU capacity)
   compute_security_group_id = local.effective_compute_model == "eks" ? module.eks[0].node_security_group_id : module.security.ec2_security_group_id
   allowed_ssh_cidrs         = var.allowed_ssh_cidrs
   instance_type             = local.effective_ollama_instance_type

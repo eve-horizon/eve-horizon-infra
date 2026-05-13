@@ -20,6 +20,10 @@ terraform {
       source  = "hashicorp/tls"
       version = "~> 4.0"
     }
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = "~> 2.0"
+    }
   }
 }
 
@@ -33,4 +37,17 @@ provider "aws" {
       ManagedBy   = "terraform"
     }
   }
+}
+
+data "aws_eks_cluster_auth" "main" {
+  count = local.effective_compute_model == "eks" ? 1 : 0
+  name  = module.eks[0].cluster_name
+}
+
+provider "kubernetes" {
+  host = local.effective_compute_model == "eks" ? module.eks[0].cluster_endpoint : "https://127.0.0.1"
+  cluster_ca_certificate = local.effective_compute_model == "eks" ? (
+    base64decode(module.eks[0].cluster_ca_certificate)
+  ) : null
+  token = local.effective_compute_model == "eks" ? data.aws_eks_cluster_auth.main[0].token : null
 }
