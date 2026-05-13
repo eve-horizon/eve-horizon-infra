@@ -257,6 +257,14 @@ resource "aws_launch_template" "default" {
   update_default_version = true
   vpc_security_group_ids = [aws_security_group.nodes.id]
 
+  block_device_mappings {
+    device_name = "/dev/xvda"
+    ebs {
+      volume_size = var.node_disk_size
+      volume_type = "gp3"
+    }
+  }
+
   tag_specifications {
     resource_type = "instance"
     tags = {
@@ -270,6 +278,14 @@ resource "aws_launch_template" "agents" {
   update_default_version = true
   vpc_security_group_ids = [aws_security_group.nodes.id]
 
+  block_device_mappings {
+    device_name = "/dev/xvda"
+    ebs {
+      volume_size = var.node_disk_size
+      volume_type = "gp3"
+    }
+  }
+
   tag_specifications {
     resource_type = "instance"
     tags = {
@@ -282,6 +298,14 @@ resource "aws_launch_template" "apps" {
   name_prefix            = "${var.name_prefix}-eks-apps-"
   update_default_version = true
   vpc_security_group_ids = [aws_security_group.nodes.id]
+
+  block_device_mappings {
+    device_name = "/dev/xvda"
+    ebs {
+      volume_size = var.node_disk_size
+      volume_type = "gp3"
+    }
+  }
 
   tag_specifications {
     resource_type = "instance"

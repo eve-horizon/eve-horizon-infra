@@ -114,3 +114,9 @@ variable "apps_desired_size" {
   type        = number
   default     = 0
 }
+
+variable "node_disk_size" {
+  description = "Root EBS volume size in GB for EKS worker nodes"
+  type        = number
+  default     = 50
+}
