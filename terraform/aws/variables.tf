@@ -386,3 +386,9 @@ variable "ses_configuration_set_name" {
   type        = string
   default     = "eve-default"
 }
+
+variable "ses_smtp_user_name" {
+  description = "Existing IAM user used as the SES SMTP credentials principal. When non-empty, an inline policy is attached granting ses:SendRawEmail on the configuration set so outbound SMTP can include the X-SES-CONFIGURATION-SET header. Leave empty to skip (the user is out-of-band today)."
+  type        = string
+  default     = "eve-eh1-ses-smtp"
+}
