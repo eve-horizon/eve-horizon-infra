@@ -70,6 +70,11 @@ output "api_irsa_role_arn" {
   value       = var.compute_model == "eks" ? aws_iam_role.api_irsa[0].arn : null
 }
 
+output "orchestrator_cost_explorer_irsa_role_arn" {
+  description = "IRSA role ARN for eve-orchestrator Cost Explorer reads"
+  value       = var.compute_model == "eks" ? aws_iam_role.orchestrator_cost_explorer_irsa[0].arn : null
+}
+
 output "storage_internal_bucket" {
   description = "S3 bucket for eve-internal platform storage"
   value       = var.compute_model == "eks" ? aws_s3_bucket.eve_internal[0].bucket : null

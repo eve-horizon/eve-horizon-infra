@@ -120,3 +120,9 @@ variable "node_disk_size" {
   type        = number
   default     = 50
 }
+
+variable "resource_tags" {
+  description = "Common tags applied to EKS-managed cost-bearing resources."
+  type        = map(string)
+  default     = {}
+}

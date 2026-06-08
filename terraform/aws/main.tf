@@ -20,6 +20,14 @@ locals {
   stable_egress_subnet_ids = var.stable_egress_subnet_ids == null ? [module.network.public_subnet_ids[1]] : (
     length(var.stable_egress_subnet_ids) > 0 ? var.stable_egress_subnet_ids : [module.network.public_subnet_ids[1]]
   )
+  cost_tags = {
+    Project     = var.project_name
+    Environment = var.environment
+    CostScope   = var.cost_scope
+    EveInstance = var.name_prefix
+    EveCluster  = local.effective_compute_model == "eks" ? "${var.name_prefix}-cluster" : var.name_prefix
+    ManagedBy   = "terraform"
+  }
 }
 
 # -----------------------------------------------------------------------------
@@ -102,6 +110,7 @@ module "eks" {
   apps_min_size         = var.eks_apps_min_size
   apps_max_size         = var.eks_apps_max_size
   apps_desired_size     = var.eks_apps_desired_size
+  resource_tags         = local.cost_tags
 }
 
 resource "aws_security_group_rule" "rds_from_compute" {
@@ -476,6 +485,51 @@ resource "aws_iam_role_policy" "api_storage" {
   })
 }
 
+# -----------------------------------------------------------------------------
+# Orchestrator Cost Explorer IRSA — read-only bill-backed cluster cost
+# -----------------------------------------------------------------------------
+resource "aws_iam_role" "orchestrator_cost_explorer_irsa" {
+  count = local.effective_compute_model == "eks" ? 1 : 0
+  name  = "${var.name_prefix}-orchestrator-cost-explorer-irsa"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Federated = module.eks[0].oidc_provider_arn
+        }
+        Action = "sts:AssumeRoleWithWebIdentity"
+        Condition = {
+          StringEquals = {
+            "${trimprefix(module.eks[0].oidc_provider_url, "https://")}:aud" = "sts.amazonaws.com"
+            "${trimprefix(module.eks[0].oidc_provider_url, "https://")}:sub" = "system:serviceaccount:eve:eve-orchestrator"
+          }
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "orchestrator_cost_explorer" {
+  count = local.effective_compute_model == "eks" ? 1 : 0
+  name  = "${var.name_prefix}-orchestrator-cost-explorer"
+  role  = aws_iam_role.orchestrator_cost_explorer_irsa[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "CostExplorerReadOnly"
+        Effect   = "Allow"
+        Action   = "ce:GetCostAndUsage"
+        Resource = "*"
+      }
+    ]
+  })
+}
+
 resource "aws_iam_role_policy" "api_ollama_wake" {
   count = var.ollama_enabled && local.effective_compute_model == "eks" ? 1 : 0
   name  = "${var.name_prefix}-api-ollama-wake"
@@ -581,4 +635,5 @@ module "eks_egress_pool" {
   min_size               = var.stable_egress_min_size
   max_size               = var.stable_egress_max_size
   desired_size           = var.stable_egress_desired_size
+  resource_tags          = local.cost_tags
 }

@@ -267,9 +267,18 @@ resource "aws_launch_template" "default" {
 
   tag_specifications {
     resource_type = "instance"
-    tags = {
-      Name = "${var.name_prefix}-eks-default"
-    }
+    tags = merge(var.resource_tags, {
+      Name      = "${var.name_prefix}-eks-default"
+      Component = "eks-default-node"
+    })
+  }
+
+  tag_specifications {
+    resource_type = "volume"
+    tags = merge(var.resource_tags, {
+      Name      = "${var.name_prefix}-eks-default-root"
+      Component = "eks-default-node"
+    })
   }
 }
 
@@ -288,9 +297,18 @@ resource "aws_launch_template" "agents" {
 
   tag_specifications {
     resource_type = "instance"
-    tags = {
-      Name = "${var.name_prefix}-eks-agents"
-    }
+    tags = merge(var.resource_tags, {
+      Name      = "${var.name_prefix}-eks-agents"
+      Component = "eks-agents-node"
+    })
+  }
+
+  tag_specifications {
+    resource_type = "volume"
+    tags = merge(var.resource_tags, {
+      Name      = "${var.name_prefix}-eks-agents-root"
+      Component = "eks-agents-node"
+    })
   }
 }
 
@@ -309,9 +327,18 @@ resource "aws_launch_template" "apps" {
 
   tag_specifications {
     resource_type = "instance"
-    tags = {
-      Name = "${var.name_prefix}-eks-apps"
-    }
+    tags = merge(var.resource_tags, {
+      Name      = "${var.name_prefix}-eks-apps"
+      Component = "eks-apps-node"
+    })
+  }
+
+  tag_specifications {
+    resource_type = "volume"
+    tags = merge(var.resource_tags, {
+      Name      = "${var.name_prefix}-eks-apps-root"
+      Component = "eks-apps-node"
+    })
   }
 }
 
@@ -342,11 +369,12 @@ resource "aws_eks_node_group" "default" {
     role = "default"
   }
 
-  tags = {
+  tags = merge(var.resource_tags, {
     Name                                              = "${var.name_prefix}-default"
+    Component                                         = "eks-default-node-group"
     "k8s.io/cluster-autoscaler/enabled"               = "true"
     "k8s.io/cluster-autoscaler/${local.cluster_name}" = "owned"
-  }
+  })
 
   lifecycle {
     ignore_changes = [scaling_config[0].desired_size]
@@ -388,11 +416,12 @@ resource "aws_eks_node_group" "agents" {
     effect = "NO_SCHEDULE"
   }
 
-  tags = {
+  tags = merge(var.resource_tags, {
     Name                                              = "${var.name_prefix}-agents"
+    Component                                         = "eks-agents-node-group"
     "k8s.io/cluster-autoscaler/enabled"               = "true"
     "k8s.io/cluster-autoscaler/${local.cluster_name}" = "owned"
-  }
+  })
 
   lifecycle {
     ignore_changes = [scaling_config[0].desired_size]
@@ -434,11 +463,12 @@ resource "aws_eks_node_group" "apps" {
     effect = "NO_SCHEDULE"
   }
 
-  tags = {
+  tags = merge(var.resource_tags, {
     Name                                              = "${var.name_prefix}-apps"
+    Component                                         = "eks-apps-node-group"
     "k8s.io/cluster-autoscaler/enabled"               = "true"
     "k8s.io/cluster-autoscaler/${local.cluster_name}" = "owned"
-  }
+  })
 
   lifecycle {
     ignore_changes = [scaling_config[0].desired_size]

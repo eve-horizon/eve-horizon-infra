@@ -31,11 +31,7 @@ provider "aws" {
   region = local.effective_region
 
   default_tags {
-    tags = {
-      Project     = var.project_name
-      Environment = var.environment
-      ManagedBy   = "terraform"
-    }
+    tags = local.cost_tags
   }
 }
 
@@ -48,11 +44,7 @@ provider "aws" {
   region = "us-west-2"
 
   default_tags {
-    tags = {
-      Project     = var.project_name
-      Environment = var.environment
-      ManagedBy   = "terraform"
-    }
+    tags = local.cost_tags
   }
 }
 

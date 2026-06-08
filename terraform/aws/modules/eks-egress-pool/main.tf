@@ -39,9 +39,18 @@ resource "aws_launch_template" "this" {
 
   tag_specifications {
     resource_type = "instance"
-    tags = {
-      Name = "${var.name_prefix}-eks-egress"
-    }
+    tags = merge(var.resource_tags, {
+      Name      = "${var.name_prefix}-eks-egress"
+      Component = "eks-egress-node"
+    })
+  }
+
+  tag_specifications {
+    resource_type = "volume"
+    tags = merge(var.resource_tags, {
+      Name      = "${var.name_prefix}-eks-egress-root"
+      Component = "eks-egress-node"
+    })
   }
 }
 
@@ -77,11 +86,12 @@ resource "aws_eks_node_group" "this" {
     effect = var.node_taint_effect
   }
 
-  tags = {
+  tags = merge(var.resource_tags, {
     Name                                            = "${var.name_prefix}-egress"
+    Component                                       = "eks-egress-node-group"
     "k8s.io/cluster-autoscaler/enabled"             = "true"
     "k8s.io/cluster-autoscaler/${var.cluster_name}" = "owned"
-  }
+  })
 
   lifecycle {
     ignore_changes = [scaling_config[0].desired_size]

@@ -449,7 +449,7 @@ cmd_upgrade() {
       [[ -f "$patch_file" ]] || continue
       # Normalize service image host + tag to configured registry and target version.
       local service
-      for service in api gateway orchestrator worker agent-runtime sso; do
+      for service in api gateway orchestrator worker agent-runtime sso dashboard; do
         perl -0pi -e "s|image:\\s*[^\\s\"']*/${service}:[^\\s\"']+|image: ${registry}/${service}:${new_version}|g" "$patch_file"
       done
       perl -0pi -e "s|value:\\s*\"?[^\"\\s]*/worker(-full)?:[^\"\\s]+\"?|value: \"${registry}/worker\\1:${new_version}\"|g" "$patch_file"

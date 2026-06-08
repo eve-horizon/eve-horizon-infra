@@ -22,6 +22,12 @@ variable "name_prefix" {
   # No default - must be explicitly set to avoid naming collisions
 }
 
+variable "cost_scope" {
+  description = "Logical cost scope tag applied to billable resources"
+  type        = string
+  default     = "eve-horizon"
+}
+
 # -----------------------------------------------------------------------------
 # AWS Configuration
 # -----------------------------------------------------------------------------

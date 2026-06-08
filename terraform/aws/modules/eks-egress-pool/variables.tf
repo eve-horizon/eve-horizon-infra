@@ -69,6 +69,12 @@ variable "node_disk_size" {
   default     = 20
 }
 
+variable "resource_tags" {
+  description = "Common tags applied to egress-pool cost-bearing resources."
+  type        = map(string)
+  default     = {}
+}
+
 variable "node_label_key" {
   description = "Kubernetes label key applied to nodes. The deployer's `nodeSelector` matches this key/value pair."
   type        = string
