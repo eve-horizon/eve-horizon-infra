@@ -1,0 +1,61 @@
+# =============================================================================
+# OpenCost — Helm values (aws-eks staging overlay)
+# =============================================================================
+#
+# In-cluster cost allocation exporter. Powers Eve's opt-in env-cost collector,
+# which reads only the OpenCost /allocation API.
+#
+# Constraints (see mini-spec):
+#   - In-cluster only. No public ingress.
+#   - Reachable at http://opencost.opencost.svc.cluster.local:9003
+#   - Cloud-neutral: OpenCost uses its built-in default on-demand pricing
+#     model (no AWS pricing creds wired in); Eve only consumes /allocation.
+#
+# OpenCost has no bundled Prometheus, so it points at the lean Prometheus
+# installed alongside it in this same namespace (see prometheus-values.yaml).
+#
+# Scheduling: the apps node group runs at the EKS max-pods ceiling, so the
+# OpenCost pod is pinned to the stable (on-demand) egress node pool, which has
+# spare capacity. Without this, OpenCost consumes apps-node pod slots and
+# starves rolling updates of room to surge.
+# =============================================================================
+
+opencost:
+  exporter:
+    # API/exporter port — Eve's EVE_OPENCOST_URL targets this.
+    apiPort: 9003
+    # No public ingress (in-cluster only).
+    apiIngress:
+      enabled: false
+
+  # Point OpenCost at the in-namespace Prometheus (release "prometheus" →
+  # service "prometheus-server" on port 80 in the opencost namespace).
+  prometheus:
+    internal:
+      enabled: true
+      serviceName: prometheus-server
+      namespaceName: opencost
+      port: 80
+      scheme: http
+    external:
+      enabled: false
+
+  # UI not needed for the collector; disabling it also removes its ingress.
+  ui:
+    enabled: false
+    ingress:
+      enabled: false
+
+  # Pin to the stable egress node pool (apps nodes are at max-pods capacity).
+  tolerations:
+    - key: "eve.io/egress-pool"
+      operator: "Equal"
+      value: "stable"
+      effect: "NoSchedule"
+  nodeSelector:
+    eve.io/egress-pool: stable
+
+# ClusterIP service exposing the exporter on 9003 — no LoadBalancer/NodePort.
+service:
+  enabled: true
+  type: ClusterIP

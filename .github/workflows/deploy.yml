@@ -129,6 +129,14 @@ jobs:
           version: 'v1.29.0'
 
       # -----------------------------------------------------------------------
+      # Install Helm (used to deploy OpenCost + its Prometheus backend)
+      # -----------------------------------------------------------------------
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: 'v3.14.4'
+
+      # -----------------------------------------------------------------------
       # Configure kubeconfig
       # -----------------------------------------------------------------------
       - name: Configure kubeconfig (direct)
@@ -157,6 +165,85 @@ jobs:
         run: |
           kubectl cluster-info
           kubectl get nodes
+
+      # -----------------------------------------------------------------------
+      # Reconcile ingress-nginx NLB cost tags.
+      #
+      # The ingress NLB is owned by the Kubernetes Service created by the
+      # ingress-nginx Helm release, not by Terraform. Keep the Service
+      # annotation persistent in the deploy path so the AWS load balancer
+      # controller can reconcile tags without manual AWS tag patches.
+      # -----------------------------------------------------------------------
+      - name: Reconcile ingress-nginx NLB cost tags
+        if: steps.config.outputs.compute_model == 'eks'
+        env:
+          ENVIRONMENT: ${{ steps.config.outputs.environment }}
+          NAME_PREFIX: ${{ steps.config.outputs.name_prefix }}
+          PROJECT_NAME: eve-horizon
+          COST_SCOPE: eve-horizon
+          INGRESS_NGINX_CHART_VERSION: 4.14.3
+        run: |
+          set -euo pipefail
+
+          INGRESS_RESOURCE_TAGS="Project=${PROJECT_NAME},Environment=${ENVIRONMENT},CostScope=${COST_SCOPE},EveInstance=${NAME_PREFIX},EveCluster=${NAME_PREFIX}-cluster,Component=ingress-nginx,ManagedBy=helm"
+          HELM_INGRESS_RESOURCE_TAGS="${INGRESS_RESOURCE_TAGS//,/\\,}"
+
+          helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+          helm repo update
+          helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+            --namespace ingress-nginx --create-namespace \
+            --version "$INGRESS_NGINX_CHART_VERSION" \
+            --reuse-values \
+            --set controller.service.type=LoadBalancer \
+            --set controller.service.annotations."service\.beta\.kubernetes\.io/aws-load-balancer-type"=nlb \
+            --set controller.service.annotations."service\.beta\.kubernetes\.io/aws-load-balancer-scheme"=internet-facing \
+            --set-string controller.service.annotations."service\.beta\.kubernetes\.io/aws-load-balancer-additional-resource-tags"="$HELM_INGRESS_RESOURCE_TAGS" \
+            --wait --timeout 5m
+
+          kubectl -n ingress-nginx get svc ingress-nginx-controller \
+            -o jsonpath='{.metadata.annotations.service\.beta\.kubernetes\.io/aws-load-balancer-additional-resource-tags}{"\n"}'
+
+      # -----------------------------------------------------------------------
+      # Install OpenCost (cost allocation exporter) + lean Prometheus backend
+      #
+      # OpenCost has no bundled Prometheus and staging has none, so we install
+      # prometheus-community/prometheus (which brings kube-state-metrics) into
+      # the opencost namespace, then point OpenCost at it. Both are
+      # ClusterIP-only with no public ingress, pinned to the egress node pool.
+      # OpenCost powers Eve's opt-in env-cost collector, which reads only the
+      # /allocation API.
+      #
+      # Runs early (before migrations/manifests) so the helm upgrade settles
+      # this stack onto the egress pool first, keeping apps-node pod slots free
+      # for the eve service rollouts that follow.
+      # -----------------------------------------------------------------------
+      - name: Install OpenCost
+        if: steps.config.outputs.compute_model == 'eks'
+        env:
+          OVERLAY: ${{ steps.config.outputs.overlay }}
+        run: |
+          set -euo pipefail
+
+          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+          helm repo add opencost https://opencost.github.io/opencost-helm-chart
+          helm repo update
+
+          # Prometheus (+ kube-state-metrics): metrics source for OpenCost.
+          helm upgrade --install prometheus prometheus-community/prometheus \
+            --namespace opencost \
+            --create-namespace \
+            -f "k8s/overlays/${OVERLAY}/prometheus-values.yaml" \
+            --wait --timeout 5m
+
+          # OpenCost exporter, pointed at the in-namespace Prometheus.
+          helm upgrade --install opencost opencost/opencost \
+            --namespace opencost \
+            --create-namespace \
+            -f "k8s/overlays/${OVERLAY}/opencost-values.yaml" \
+            --wait --timeout 5m
+
+          echo "=== OpenCost namespace ==="
+          kubectl -n opencost get pods,svc -o wide
 
       # -----------------------------------------------------------------------
       # Login to container registry

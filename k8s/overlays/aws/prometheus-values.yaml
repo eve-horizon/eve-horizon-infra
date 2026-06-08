@@ -1,0 +1,70 @@
+# =============================================================================
+# Prometheus — Helm values (aws-eks staging overlay)
+# =============================================================================
+#
+# Lean Prometheus stack that backs OpenCost. The opencost helm chart does not
+# bundle Prometheus, and staging has none, so we install the
+# prometheus-community/prometheus chart into the opencost namespace.
+#
+# It pulls in kube-state-metrics (pod/node resource requests + node info). With
+# cAdvisor metrics (scraped from the kubelet on every node — no extra pod) and
+# node pricing derived from instance-type labels, OpenCost produces cost
+# allocation and a monthly run-rate estimate.
+#
+# Footprint is deliberately minimal: the apps node group runs at the EKS
+# max-pods ceiling, so everything here is pinned to the stable egress node pool
+# and node-exporter (a DaemonSet that would land on the full apps nodes) is
+# disabled. Alertmanager and pushgateway are not needed and are disabled.
+#
+# Metrics back a "fresh estimate" run-rate, not long-term history, so storage
+# is ephemeral (emptyDir) with short retention.
+# =============================================================================
+
+# Required by OpenCost for allocation queries (pod/node requests, node info).
+kube-state-metrics:
+  enabled: true
+  nodeSelector:
+    eve.io/egress-pool: stable
+  tolerations:
+    - key: "eve.io/egress-pool"
+      operator: "Equal"
+      value: "stable"
+      effect: "NoSchedule"
+
+# Disabled: a per-node DaemonSet would consume pod slots on the already-full
+# apps nodes. OpenCost derives node cost from instance-type labels + pricing,
+# and utilization from cAdvisor, so node-exporter is not required for estimates.
+prometheus-node-exporter:
+  enabled: false
+
+# Not needed for cost allocation.
+alertmanager:
+  enabled: false
+
+prometheus-pushgateway:
+  enabled: false
+
+server:
+  # Ephemeral storage — no EBS PVC to provision; metrics need not survive restarts.
+  persistentVolume:
+    enabled: false
+  retention: "2d"
+  # In-cluster only.
+  ingress:
+    enabled: false
+  service:
+    type: ClusterIP
+  # Pin to the stable egress node pool (apps nodes are at max-pods capacity).
+  nodeSelector:
+    eve.io/egress-pool: stable
+  tolerations:
+    - key: "eve.io/egress-pool"
+      operator: "Equal"
+      value: "stable"
+      effect: "NoSchedule"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
