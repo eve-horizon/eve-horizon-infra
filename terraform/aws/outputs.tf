@@ -100,6 +100,11 @@ output "db_snapshots_bucket_name" {
   value       = var.compute_model == "eks" ? aws_s3_bucket.db_snapshots[0].bucket : null
 }
 
+output "rds_parameter_group_name" {
+  description = "Custom RDS parameter group name when managed DB preload extensions are enabled"
+  value       = module.rds.parameter_group_name
+}
+
 output "ses_configuration_set_name" {
   description = "Name of the SESv2 configuration set the Eve API attaches to outbound SMTP via X-SES-CONFIGURATION-SET."
   value       = module.ses_feedback.configuration_set_name

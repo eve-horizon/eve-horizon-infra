@@ -67,6 +67,9 @@ db_username       = "eve"
 # db_password is in secrets.auto.tfvars (gitignored, auto-loaded by Terraform)
 database_instance_class = "db.t3.medium"
 deletion_protection = false
+# Provider-gated preload extensions. Static shared_preload_libraries changes
+# require an RDS reboot before the extension can be installed.
+# managed_db_enabled_preload_extensions = ["pg_cron"]
 
 # --- Ollama GPU (optional) ---
 # ollama_enabled              = true

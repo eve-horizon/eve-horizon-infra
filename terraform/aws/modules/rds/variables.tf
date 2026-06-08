@@ -44,3 +44,16 @@ variable "deletion_protection" {
   type        = bool
   default     = false
 }
+
+variable "enabled_preload_extensions" {
+  description = "PostgreSQL extensions that require shared_preload_libraries. Currently supports pg_cron."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for extension in var.enabled_preload_extensions : contains(["pg_cron"], extension)
+    ])
+    error_message = "enabled_preload_extensions currently supports only pg_cron."
+  }
+}

@@ -1,6 +1,11 @@
 # RDS Module - PostgreSQL Database Instance
 # Creates a managed PostgreSQL database in private subnets
 
+locals {
+  enabled_preload_extensions = distinct(var.enabled_preload_extensions)
+  preload_parameter_enabled  = length(local.enabled_preload_extensions) > 0
+}
+
 # -----------------------------------------------------------------------------
 # DB Subnet Group
 # Places RDS in private subnets for security
@@ -12,6 +17,29 @@ resource "aws_db_subnet_group" "main" {
 
   tags = {
     Name = "${var.name_prefix}-db-subnet-group"
+  }
+}
+
+# -----------------------------------------------------------------------------
+# DB Parameter Group
+# Enables provider-gated PostgreSQL extensions that require preload.
+# Static shared_preload_libraries changes require a DB reboot before use.
+# -----------------------------------------------------------------------------
+resource "aws_db_parameter_group" "main" {
+  count = local.preload_parameter_enabled ? 1 : 0
+
+  name        = "${var.name_prefix}-postgres-params"
+  family      = "postgres15"
+  description = "PostgreSQL parameters for ${var.name_prefix}"
+
+  parameter {
+    name         = "shared_preload_libraries"
+    value        = join(",", local.enabled_preload_extensions)
+    apply_method = "pending-reboot"
+  }
+
+  tags = {
+    Name = "${var.name_prefix}-postgres-params"
   }
 }
 
@@ -43,6 +71,7 @@ resource "aws_db_instance" "main" {
 
   # Network configuration
   db_subnet_group_name   = aws_db_subnet_group.main.name
+  parameter_group_name   = local.preload_parameter_enabled ? aws_db_parameter_group.main[0].name : null
   vpc_security_group_ids = [var.security_group_id]
   publicly_accessible    = false
 

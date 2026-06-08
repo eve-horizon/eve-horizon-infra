@@ -49,6 +49,8 @@ spec:
               value: "4749"
             - name: EVE_DEFAULT_DOMAIN
               value: "eh1.incept5.dev"
+            - name: EVE_MANAGED_DB_ENABLED_PRELOAD_EXTENSIONS
+              value: "pg_cron"
             - name: EVE_COMPUTE_MODEL
               value: "eks"
             - name: EVE_DEFAULT_INGRESS_CLASS

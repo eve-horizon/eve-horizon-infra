@@ -63,14 +63,15 @@ resource "aws_key_pair" "main" {
 module "rds" {
   source = "./modules/rds"
 
-  name_prefix         = var.name_prefix
-  subnet_ids          = module.network.private_subnet_ids
-  security_group_id   = module.security.rds_security_group_id
-  db_name             = var.db_name
-  db_username         = var.db_username
-  db_password         = var.db_password
-  db_instance_class   = local.effective_db_instance_class
-  deletion_protection = var.deletion_protection
+  name_prefix                = var.name_prefix
+  subnet_ids                 = module.network.private_subnet_ids
+  security_group_id          = module.security.rds_security_group_id
+  db_name                    = var.db_name
+  db_username                = var.db_username
+  db_password                = var.db_password
+  db_instance_class          = local.effective_db_instance_class
+  deletion_protection        = var.deletion_protection
+  enabled_preload_extensions = var.managed_db_enabled_preload_extensions
 }
 
 # -----------------------------------------------------------------------------

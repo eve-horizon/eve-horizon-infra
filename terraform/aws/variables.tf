@@ -250,6 +250,19 @@ variable "deletion_protection" {
   default     = false
 }
 
+variable "managed_db_enabled_preload_extensions" {
+  description = "Provider-gated managed DB extensions requiring shared_preload_libraries. Currently supports pg_cron."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for extension in var.managed_db_enabled_preload_extensions : contains(["pg_cron"], extension)
+    ])
+    error_message = "managed_db_enabled_preload_extensions currently supports only pg_cron."
+  }
+}
+
 # -----------------------------------------------------------------------------
 # Ollama GPU Host (optional)
 # -----------------------------------------------------------------------------

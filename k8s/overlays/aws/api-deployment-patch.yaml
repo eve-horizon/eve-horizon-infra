@@ -22,6 +22,8 @@ spec:
               value: "https://api.eh1.incept5.dev"
             - name: WORKER_URL
               value: http://eve-worker.eve.svc.cluster.local:4749
+            - name: EVE_MANAGED_DB_ENABLED_PRELOAD_EXTENSIONS
+              value: "pg_cron"
             - name: EVE_GATEWAY_URL
               value: "http://eve-gateway.eve.svc.cluster.local:4820"
             - name: EVE_PUBLIC_API_URL

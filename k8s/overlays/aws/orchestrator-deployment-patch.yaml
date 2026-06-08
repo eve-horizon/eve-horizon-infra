@@ -35,6 +35,8 @@ spec:
               value: "true"
             - name: EVE_MANAGED_DB_LOCAL_SEED
               value: "true"
+            - name: EVE_MANAGED_DB_ENABLED_PRELOAD_EXTENSIONS
+              value: "pg_cron"
             - name: EVE_ENV_HEALTH_ENABLED
               value: "true"
             - name: EVE_ENV_HEALTH_STABLE_TICKS
