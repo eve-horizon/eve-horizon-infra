@@ -44,11 +44,11 @@ spec:
             - name: EVE_API_URL
               value: http://eve-api:4701
             - name: EVE_PUBLIC_API_URL
-              value: "https://api.eh1.incept5.dev"
+              value: "https://api.eve.example.com"
             - name: WORKER_PORT
               value: "4749"
             - name: EVE_DEFAULT_DOMAIN
-              value: "eh1.incept5.dev"
+              value: "apps.example.com"
             - name: EVE_MANAGED_DB_ENABLED_PRELOAD_EXTENSIONS
               value: "pg_cron"
             - name: EVE_COMPUTE_MODEL
@@ -68,11 +68,11 @@ spec:
             - name: EVE_DEFAULT_TLS_CLUSTER_ISSUER
               value: "letsencrypt-prod"
             - name: EVE_REGISTRY_HOST
-              value: "registry.eh1.incept5.dev"
+              value: "registry.eve.example.com"
             - name: EVE_PLATFORM_INGRESS_HOSTNAME
-              value: "ingress.eh1.incept5.dev"
+              value: "ingress.eve.example.com"
             - name: EVE_PLATFORM_INGRESS_IP
-              value: "52.209.1.195,52.17.16.223"
+              value: "REPLACE_INGRESS_IP"
             - name: EVE_INTERNAL_API_KEY
               valueFrom:
                 secretKeyRef:

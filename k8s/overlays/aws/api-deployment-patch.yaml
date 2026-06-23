@@ -19,7 +19,7 @@ spec:
             - name: API_PORT
               value: "4701"
             - name: EVE_API_URL
-              value: "https://api.eh1.incept5.dev"
+              value: "https://api.eve.example.com"
             - name: WORKER_URL
               value: http://eve-worker.eve.svc.cluster.local:4749
             - name: EVE_MANAGED_DB_ENABLED_PRELOAD_EXTENSIONS
@@ -27,11 +27,11 @@ spec:
             - name: EVE_GATEWAY_URL
               value: "http://eve-gateway.eve.svc.cluster.local:4820"
             - name: EVE_PUBLIC_API_URL
-              value: "https://api.eh1.incept5.dev"
+              value: "https://api.eve.example.com"
             - name: EVE_DEFAULT_DOMAIN
-              value: "eh1.incept5.dev"
+              value: "apps.example.com"
             - name: EVE_REGISTRY_HOST
-              value: registry.eh1.incept5.dev
+              value: registry.eve.example.com
             - name: EVE_REGISTRY_SIGNING_KEY
               valueFrom:
                 secretKeyRef:
@@ -48,10 +48,10 @@ spec:
             - name: EVE_STORAGE_REGION
               value: "eu-west-1"
             - name: EVE_STORAGE_INTERNAL_BUCKET
-              value: "eh1-eve-internal"
+              value: "REPLACE_INTERNAL_BUCKET"
             - name: EVE_STORAGE_ORG_BUCKET_PREFIX
-              value: "eh1-eve-org"
+              value: "REPLACE_ORG_BUCKET_PREFIX"
             - name: EVE_PLATFORM_INGRESS_HOSTNAME
-              value: "ingress.eh1.incept5.dev"
+              value: "ingress.eve.example.com"
             - name: EVE_PLATFORM_INGRESS_IP
-              value: "52.209.1.195,52.17.16.223"
+              value: "REPLACE_INGRESS_IP"

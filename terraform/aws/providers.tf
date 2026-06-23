@@ -3,12 +3,16 @@
 terraform {
   required_version = ">= 1.5.0"
 
+  # Partial backend configuration — the state location is instance-specific,
+  # so bucket/key/region/dynamodb_table are supplied at init time rather than
+  # committed:
+  #
+  #   terraform init -backend-config=backend.hcl
+  #
+  # Bootstrap the bucket + lock table first with `terraform/aws-backend`, then
+  # copy backend.hcl.example to backend.hcl and fill in your values.
   backend "s3" {
-    bucket         = "eh1-terraform-state-767828750268"
-    key            = "env/staging/terraform.tfstate"
-    region         = "eu-west-1"
-    dynamodb_table = "eh1-tf-lock"
-    encrypt        = true
+    encrypt = true
   }
 
   required_providers {

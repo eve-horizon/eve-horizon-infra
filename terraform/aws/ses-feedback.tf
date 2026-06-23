@@ -60,9 +60,9 @@ resource "aws_iam_role_policy" "api_ses_suppression_read" {
 # -----------------------------------------------------------------------------
 # SMTP user — permission to use the SES configuration set
 # -----------------------------------------------------------------------------
-# The SMTP IAM user (`eve-eh1-ses-smtp`) was created out-of-band when SES was
-# first set up; its existing inline policy only allows SendEmail/SendRawEmail
-# on the `incept5.com` identity. Now that mailer sends pass
+# The SMTP IAM user (var.ses_smtp_user_name) is provisioned out-of-band when
+# SES is first set up; its existing inline policy only allows SendEmail/
+# SendRawEmail on the sending-domain identity. Now that mailer sends pass
 # `X-SES-CONFIGURATION-SET: eve-default` so events route to the SNS feedback
 # topic, the user also needs `ses:SendRawEmail` permission on the
 # configuration-set resource. Without this, SES returns 554 Access denied.

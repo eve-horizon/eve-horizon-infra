@@ -135,4 +135,8 @@ Safety guardrails:
 
 ## License
 
-See the Eve Horizon project for license terms.
+Licensed under the [MIT License](LICENSE). Copyright (c) 2026 Adam Chesney and Incept5.
+
+## Security
+
+See [SECURITY.md](SECURITY.md) for how to report vulnerabilities.

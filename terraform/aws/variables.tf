@@ -397,7 +397,7 @@ variable "stable_egress_desired_size" {
 variable "ses_feedback_endpoint" {
   description = "HTTPS webhook URL the SES feedback SNS topic subscribes to. The Eve API confirms the subscription and persists events into the email_delivery_events table."
   type        = string
-  default     = "https://api.eh1.incept5.dev/webhooks/ses-feedback"
+  default     = "https://api.eve.example.com/webhooks/ses-feedback"
 }
 
 variable "ses_configuration_set_name" {
@@ -407,7 +407,7 @@ variable "ses_configuration_set_name" {
 }
 
 variable "ses_smtp_user_name" {
-  description = "Existing IAM user used as the SES SMTP credentials principal. When non-empty, an inline policy is attached granting ses:SendRawEmail on the configuration set so outbound SMTP can include the X-SES-CONFIGURATION-SET header. Leave empty to skip (the user is out-of-band today)."
+  description = "Existing IAM user used as the SES SMTP credentials principal. When non-empty, an inline policy is attached granting ses:SendRawEmail on the configuration set so outbound SMTP can include the X-SES-CONFIGURATION-SET header. Leave empty to skip (the user is provisioned out-of-band)."
   type        = string
-  default     = "eve-eh1-ses-smtp"
+  default     = ""
 }

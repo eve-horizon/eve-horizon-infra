@@ -12,10 +12,10 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - registry.eh1.incept5.dev
+        - registry.eve.example.com
       secretName: eve-registry-tls
   rules:
-    - host: registry.eh1.incept5.dev
+    - host: registry.eve.example.com
       http:
         paths:
           - path: /

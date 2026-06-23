@@ -13,10 +13,10 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - api.eh1.incept5.dev
+        - api.eve.example.com
       secretName: eve-api-tls
   rules:
-    - host: api.eh1.incept5.dev
+    - host: api.eve.example.com
       http:
         paths:
           - path: /
