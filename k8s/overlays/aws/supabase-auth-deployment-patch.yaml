@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: supabase-auth
+  namespace: eve
+spec:
+  template:
+    spec:
+      containers:
+        - name: gotrue
+          env:
+            - name: API_EXTERNAL_URL
+              value: "https://auth.eve.example.com"
+            - name: GOTRUE_SITE_URL
+              value: "https://sso.eve.example.com"
+            - name: GOTRUE_SMTP_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: eve-app
+                  key: GOTRUE_SMTP_HOST
+            - name: GOTRUE_SMTP_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: eve-app
+                  key: GOTRUE_SMTP_PORT
+            - name: GOTRUE_SMTP_USER
+              valueFrom:
+                secretKeyRef:
+                  name: eve-app
+                  key: GOTRUE_SMTP_USER
+            - name: GOTRUE_SMTP_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: eve-app
+                  key: GOTRUE_SMTP_PASS
+            - name: GOTRUE_SMTP_ADMIN_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: eve-app
+                  key: GOTRUE_SMTP_ADMIN_EMAIL
+            - name: GOTRUE_SMTP_SENDER_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: eve-app
+                  key: GOTRUE_SMTP_SENDER_NAME

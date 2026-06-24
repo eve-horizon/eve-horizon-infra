@@ -39,4 +39,7 @@ resources:
   - registry-deployment.yaml
   - registry-service.yaml
   - registry-ingress.yaml
+  - dashboard-deployment.yaml
+  - dashboard-service.yaml
+  - dashboard-ingress.yaml
   - db-migrate-job.yaml

@@ -11,7 +11,6 @@ patches:
   - path: api-deployment-patch.yaml
   - path: agent-runtime-deployment-patch.yaml
   - path: agent-runtime-pvc-patch.yaml
-  - path: buildkitd-pvc-patch.yaml
   - path: gateway-ingress-patch.yaml
   - path: gateway-deployment-patch.yaml
   - path: supabase-auth-ingress-patch.yaml
@@ -20,10 +19,6 @@ patches:
   - path: sso-deployment-patch.yaml
   - path: orchestrator-deployment-patch.yaml
   - path: worker-deployment-patch.yaml
-  - path: api-serviceaccount-patch.yaml
-  - path: registry-configmap-patch.yaml
-  - path: registry-serviceaccount-patch.yaml
-  - path: registry-ingress-patch.yaml
   # Delete db-migrate-job from kustomize build — it's a one-shot job
   # applied separately by the deploy workflow's migration step.
   - target:
@@ -63,7 +58,7 @@ patches:
       kind: Secret
       metadata:
         name: eve-postgres
-  # Delete eve-app secret (staging manages it independently via kubectl)
+  # Delete eve-app secret (managed independently via kubectl)
   - target:
       kind: Secret
       name: eve-app
@@ -73,3 +68,49 @@ patches:
       kind: Secret
       metadata:
         name: eve-app
+  # Delete registry resources in the k3s overlay (registry is enabled in the aws-eks overlay)
+  - target:
+      kind: ConfigMap
+      name: eve-registry-config
+    patch: |
+      $patch: delete
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: eve-registry-config
+  - target:
+      kind: ServiceAccount
+      name: eve-registry
+    patch: |
+      $patch: delete
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: eve-registry
+  - target:
+      kind: Deployment
+      name: eve-registry
+    patch: |
+      $patch: delete
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: eve-registry
+  - target:
+      kind: Service
+      name: eve-registry
+    patch: |
+      $patch: delete
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: eve-registry
+  - target:
+      kind: Ingress
+      name: eve-registry
+    patch: |
+      $patch: delete
+      apiVersion: networking.k8s.io/v1
+      kind: Ingress
+      metadata:
+        name: eve-registry
