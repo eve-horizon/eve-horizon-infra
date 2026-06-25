@@ -11,7 +11,7 @@ deployment can enable to get on-demand GPU inference via Ollama. The module
 provisions a spot GPU instance behind an ASG (desired=0), auto-starts when
 the Eve API needs inference, and auto-shuts down after idle timeout.
 
-This is already running on the Incept5 staging deployment (`incept5-eve-infra`).
+This is already running on the Incept5 staging deployment (`deployment-instance-repo`).
 This plan upstreams it into the template so every Eve deployment gets it as
 a first-class option.
 
@@ -49,7 +49,7 @@ Typical staging usage: $20-35/mo.
 
 ## What Needs to Change
 
-### 1. New: `modules/ollama/` (copy from incept5-eve-infra)
+### 1. New: `modules/ollama/` (copy from deployment-instance-repo)
 
 The module already exists and is proven. Copy it as-is:
 
@@ -61,7 +61,7 @@ modules/ollama/
   user_data.sh.tpl # NVIDIA driver, Ollama, EBS mount, idle shutdown timer
 ```
 
-**Source:** `incept5-eve-infra/terraform/aws/modules/ollama/`
+**Source:** `deployment-instance-repo/terraform/aws/modules/ollama/`
 
 No modifications needed — the module is already parameterized with
 `name_prefix`, `vpc_id`, `subnet_id`, `k3s_security_group_id`, etc.
@@ -351,10 +351,10 @@ the GPU (~90s), serves the request, and auto-stops after 30 minutes idle.
 
 | File | Change |
 |------|--------|
-| `terraform/aws/modules/ollama/main.tf` | **New** — copy from incept5-eve-infra |
-| `terraform/aws/modules/ollama/variables.tf` | **New** — copy from incept5-eve-infra |
-| `terraform/aws/modules/ollama/outputs.tf` | **New** — copy from incept5-eve-infra |
-| `terraform/aws/modules/ollama/user_data.sh.tpl` | **New** — copy from incept5-eve-infra |
+| `terraform/aws/modules/ollama/main.tf` | **New** — copy from deployment-instance-repo |
+| `terraform/aws/modules/ollama/variables.tf` | **New** — copy from deployment-instance-repo |
+| `terraform/aws/modules/ollama/outputs.tf` | **New** — copy from deployment-instance-repo |
+| `terraform/aws/modules/ollama/user_data.sh.tpl` | **New** — copy from deployment-instance-repo |
 | `terraform/aws/modules/ec2/main.tf` | **Edit** — add `iam_instance_profile` |
 | `terraform/aws/modules/ec2/variables.tf` | **Edit** — add `iam_instance_profile_name` var |
 | `terraform/aws/modules/ec2/outputs.tf` | **Edit** — add `key_pair_name` output |
@@ -366,9 +366,9 @@ the GPU (~90s), serves the request, and auto-stops after 30 minutes idle.
 | `config/secrets.env.example` | **Edit** — add ollama env vars |
 | `README.md` or `DEPLOYMENT.md` | **Edit** — add GPU inference section |
 
-## Sync Back to incept5-eve-infra
+## Sync Back to deployment-instance-repo
 
-After the template is updated, `incept5-eve-infra` should be updated to match:
+After the template is updated, `deployment-instance-repo` should be updated to match:
 
 1. Replace the hardwired ollama module block with the conditional version
 2. Set `ollama_enabled = true` in its `terraform.tfvars`

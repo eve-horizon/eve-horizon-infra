@@ -5,7 +5,7 @@
 # --- Identity ---
 project_name = "eve-horizon"
 environment  = "staging"
-name_prefix  = "eve-staging"
+name_prefix  = "eve-demo"
 
 # --- AWS ---
 region = "us-west-2"
@@ -49,8 +49,8 @@ eks_apps_desired_size   = 0
 # Optional explicit admin principals for EKS access entries.
 # If omitted, the apply caller identity receives admin access.
 # eks_admin_principal_arns = [
-#   "arn:aws:iam::123456789012:role/platform-admin",
-#   "arn:aws:iam::123456789012:user/adam",
+#   "arn:aws:iam::<aws-account-id>:role/platform-admin",
+#   "arn:aws:iam::<aws-account-id>:user/platform-admin",
 # ]
 
 # --- Domain / DNS ---
@@ -89,7 +89,7 @@ deletion_protection = false
 # `x-eve.networking.egress: stable` run with `hostNetwork: true` and exit
 # via the node's own public IPv4 / Internet Gateway path. Preserves UDP
 # source-port mappings end-to-end. Required for camera relay / P2P / STUN-
-# discovered NAT workloads (pvscam-class).
+# discovered NAT workloads (strict-vendor).
 #
 # POC defaults: 1 ON_DEMAND t3.medium pinned to eu-west-1b.
 #

@@ -20,13 +20,13 @@ How to upgrade your Eve Horizon deployment to a new platform version.
 bin/eve-infra version
 ```
 
-This shows your current pinned version and queries GitHub for the latest upstream release tag (`release-v*` on `Incept5/eve-horizon`). Uses `gh api` if available, falls back to `git ls-remote`. If a newer version exists, it tells you the exact command to upgrade.
+This shows your current pinned version and queries GitHub for the latest upstream release tag (`release-v*` on `eve-horizon/eve-horizon`). Uses `gh api` if available, falls back to `git ls-remote`. If a newer version exists, it tells you the exact command to upgrade.
 
 ### Manually
 
 Check the upstream repository for release tags:
 
-- GitHub tags: `https://github.com/Incept5/eve-horizon/tags`
+- GitHub tags: `https://github.com/eve-horizon/eve-horizon/tags`
 - ECR gallery: `https://gallery.ecr.aws/w7c4v0w3/eve-horizon/api`
 
 ---

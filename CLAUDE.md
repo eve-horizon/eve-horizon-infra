@@ -58,7 +58,7 @@ Images are pulled from `public.ecr.aws/w7c4v0w3/eve-horizon/<service>:<version>`
 
 ## Upstream Platform Fixes
 
-The upstream Eve Horizon platform source lives at `../../incept5/eve-horizon` (GitHub: `Incept5/eve-horizon`). To ship a hotfix:
+The upstream Eve Horizon platform source lives at `../../eve-horizon/eve-horizon` (GitHub: `eve-horizon/eve-horizon`). To ship a hotfix:
 
 1. Fix the bug in the upstream repo
 2. Commit and push to main

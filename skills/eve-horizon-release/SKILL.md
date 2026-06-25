@@ -79,9 +79,9 @@ git push
 Tell the user:
 
 - The tag that was pushed
-- That the publish-images workflow is now running (link: `https://github.com/Incept5/eve-horizon/actions`)
+- That the publish-images workflow is now running (link: `https://github.com/eve-horizon/eve-horizon/actions`)
 - That once images are built, a `repository_dispatch` will auto-trigger the deploy workflow on this repo
-- That they can monitor the deploy at `https://github.com/Incept5/incept5-eve-infra/actions`
+- That they can monitor the deploy at `https://github.com/your-org/deployment-instance-repo/actions`
 
 ## What Happens After Tagging
 
@@ -89,7 +89,7 @@ Tell the user:
 release-v0.1.147 pushed to eve-horizon
   -> publish-images.yml runs (builds 6 service images ~3-5 min)
   -> pushes images to public.ecr.aws/w7c4v0w3/eve-horizon/*:0.1.147
-  -> repository_dispatch -> incept5-eve-infra
+  -> repository_dispatch -> deployment-instance-repo
      -> deploy.yml runs (migrations, apply, rollout, health check ~3-5 min)
 ```
 

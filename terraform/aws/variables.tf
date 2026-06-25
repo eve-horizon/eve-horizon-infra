@@ -17,7 +17,7 @@ variable "environment" {
 }
 
 variable "name_prefix" {
-  description = "Prefix for all AWS resource names (e.g., eve-staging, eve-prod, myorg-eve)"
+  description = "Prefix for all AWS resource names (e.g., eve-demo, eve-prod, myorg-eve)"
   type        = string
   # No default - must be explicitly set to avoid naming collisions
 }
@@ -356,7 +356,7 @@ variable "stable_egress_subnet_ids" {
 }
 
 variable "stable_egress_instance_types" {
-  description = "EC2 instance types for the egress node group. POC default `t3.medium` is plenty for pvscam-class UDP workloads; bump in Phase 2 when sizing for aggregate throughput."
+  description = "EC2 instance types for the egress node group. POC default `t3.medium` is plenty for strict-vendor UDP workloads; bump in Phase 2 when sizing for aggregate throughput."
   type        = list(string)
   default     = ["t3.medium"]
 }

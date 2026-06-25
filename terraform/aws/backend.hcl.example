@@ -3,7 +3,7 @@
 # 1. Bootstrap the state bucket + lock table:
 #       cd ../aws-backend
 #       terraform init
-#       terraform apply -var name_prefix=eve-staging -var region=eu-west-1
+#       terraform apply -var name_prefix=eve-demo -var region=eu-west-1
 #    (note the `state_bucket` / `lock_table` outputs)
 #
 # 2. Copy this file to backend.hcl, fill in the values, then:
@@ -12,7 +12,7 @@
 #
 # backend.hcl is gitignored — it encodes your instance's state location.
 
-bucket         = "REPLACE_STATE_BUCKET"          # e.g. eve-staging-terraform-state-123456789012
+bucket         = "REPLACE_STATE_BUCKET"          # e.g. eve-demo-terraform-state-<aws-account-id>
 key            = "env/staging/terraform.tfstate" # state object key (per environment)
 region         = "REPLACE_REGION"                # e.g. eu-west-1
-dynamodb_table = "REPLACE_LOCK_TABLE"            # e.g. eve-staging-tf-lock
+dynamodb_table = "REPLACE_LOCK_TABLE"            # e.g. eve-demo-tf-lock

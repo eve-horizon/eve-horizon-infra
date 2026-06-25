@@ -1106,7 +1106,7 @@ gcp_region     = "us-central1"
 gcp_zone       = "us-central1-a"          # Zonal cluster (free control plane)
 
 # --- Identity ---
-name_prefix = "eve-staging"
+name_prefix = "eve-demo"
 environment = "staging"
 
 # --- Network ---

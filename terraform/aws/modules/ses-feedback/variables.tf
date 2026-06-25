@@ -9,7 +9,7 @@
 # See docs/plans/magic-link-email-silent-drop-plan.md, Lane 3.1.
 
 variable "name_prefix" {
-  description = "Prefix for AWS resource names (matches root name_prefix, e.g. eh1)."
+  description = "Prefix for AWS resource names (matches root name_prefix, e.g. eve)."
   type        = string
 }
 

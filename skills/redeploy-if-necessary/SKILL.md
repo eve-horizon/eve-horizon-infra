@@ -45,12 +45,12 @@ If health fails, do not proceed. Debug with `./bin/eve-infra status` and `./bin/
 ./bin/eve-infra version
 ```
 
-This queries GitHub tags (`release-v*` on `Incept5/eve-horizon`) and compares against the version pinned in `config/platform.yaml`.
+This queries GitHub tags (`release-v*` on `eve-horizon/eve-horizon`) and compares against the version pinned in `config/platform.yaml`.
 
 Three outcomes:
 - **"You are on the latest version"** — stop here, nothing to do
 - **"Latest available: X.Y.Z"** — proceed to step 3
-- **"Could not determine latest version"** — check network/auth, or verify manually at `https://github.com/Incept5/eve-horizon/tags`
+- **"Could not determine latest version"** — check network/auth, or verify manually at `https://github.com/eve-horizon/eve-horizon/tags`
 
 ### Step 3: Upgrade version refs
 

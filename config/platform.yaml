@@ -35,8 +35,8 @@ environment: "staging"
 
 # Unique prefix for cloud resource names (prevents collisions when running
 # multiple Eve instances in the same cloud account).
-# Example: "eve-staging", "acme-eve-prod"
-name_prefix: "eve-staging"              # [REQUIRED]
+# Example: "eve-demo", "acme-eve-prod"
+name_prefix: "eve-demo"              # [REQUIRED]
 
 # -----------------------------------------------------------------------------
 # Cloud & Region

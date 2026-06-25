@@ -40,7 +40,7 @@ variable "instance_types" {
 }
 
 variable "capacity_type" {
-  description = "ON_DEMAND or SPOT. POC uses ON_DEMAND so pvscam isn't subject to spot interruption mid-camera-poll."
+  description = "ON_DEMAND or SPOT. POC uses ON_DEMAND so strict-vendor isn't subject to spot interruption mid-camera-poll."
   type        = string
   default     = "ON_DEMAND"
 }

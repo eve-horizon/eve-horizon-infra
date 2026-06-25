@@ -19,7 +19,7 @@ Run the first five upstream Eve Horizon manual test scenarios against this corfa
 Scenarios live in the upstream repo — never modify them:
 
 ```
-../../incept5/eve-horizon/tests/manual/scenarios/
+../../eve-horizon/eve-horizon/tests/manual/scenarios/
 ```
 
 Read each scenario file before running it. The steps below customise auth, domain, and org context for this corfai instance.
@@ -75,9 +75,9 @@ Scenarios 02-05 depend on these repos (clone next to `eve-horizon`):
 
 | Repo | Used By | Path |
 |------|---------|------|
-| `incept5/eve-horizon` | All — scenario source | `../../incept5/eve-horizon` |
-| `incept5/eve-horizon-fullstack-example` | 02, 03, 05 | `../../incept5/eve-horizon-fullstack-example` |
-| `incept5/sentinel-mgr` | 07 (not in first 5) | `../../incept5/sentinel-mgr` |
+| `eve-horizon/eve-horizon` | All — scenario source | `../../eve-horizon/eve-horizon` |
+| `eve-horizon/eve-horizon-fullstack-example` | 02, 03, 05 | `../../eve-horizon/eve-horizon-fullstack-example` |
+| `incept5/reference-app` | 07 (not in first 5) | `../../eve-horizon/reference-app` |
 
 ## Required Secrets
 
@@ -98,14 +98,14 @@ eve secrets set POSTGRES_PASSWORD eve --project $PROJECT_ID
 
 If a `manual-tests.secrets` file exists in the upstream repo:
 ```bash
-eve secrets import --org $ORG_ID --file ../../incept5/eve-horizon/tests/manual/manual-tests.secrets
+eve secrets import --org $ORG_ID --file ../../eve-horizon/eve-horizon/tests/manual/manual-tests.secrets
 ```
 
 ## Scenarios
 
 ### Scenario 01: Smoke Tests (~30s)
 
-Read: `../../incept5/eve-horizon/tests/manual/scenarios/01-smoke.md`
+Read: `../../eve-horizon/eve-horizon/tests/manual/scenarios/01-smoke.md`
 
 Quick validation — API health, CLI connectivity, org secrets, harness auth.
 
@@ -120,7 +120,7 @@ eve harness list --org $ORG_ID --json
 
 ### Scenario 02: Job Execution (~3-4m)
 
-Read: `../../incept5/eve-horizon/tests/manual/scenarios/02-job-execution.md`
+Read: `../../eve-horizon/eve-horizon/tests/manual/scenarios/02-job-execution.md`
 
 End-to-end job lifecycle: create project, create job, follow output.
 
@@ -129,7 +129,7 @@ eve project ensure \
   --org $ORG_ID \
   --name "job-test-project" \
   --slug jtest \
-  --repo-url https://github.com/incept5/eve-horizon-fullstack-example \
+  --repo-url https://github.com/eve-horizon/eve-horizon-fullstack-example \
   --branch main \
   --force \
   --json
@@ -150,13 +150,13 @@ eve job show $JOB_ID --json
 
 ### Scenario 03: Pipelines API (~30s)
 
-Read: `../../incept5/eve-horizon/tests/manual/scenarios/03-pipelines-api.md`
+Read: `../../eve-horizon/eve-horizon/tests/manual/scenarios/03-pipelines-api.md`
 
 Pipeline CRUD — list, show, expand (dry-run). Requires manifest sync from a local clone.
 
 ```bash
 TMPDIR=$(mktemp -d)
-git clone --depth 1 https://github.com/incept5/eve-horizon-fullstack-example $TMPDIR/repo
+git clone --depth 1 https://github.com/eve-horizon/eve-horizon-fullstack-example $TMPDIR/repo
 cd $TMPDIR/repo
 eve project sync --project $PROJECT_ID --json
 cd -
@@ -176,7 +176,7 @@ curl -s -X POST "$EVE_API_URL/projects/$PROJECT_ID/pipelines/deploy-test/runs" \
 
 ### Scenario 04: Events API (~30s)
 
-Read: `../../incept5/eve-horizon/tests/manual/scenarios/04-events-api.md`
+Read: `../../eve-horizon/eve-horizon/tests/manual/scenarios/04-events-api.md`
 
 Event emit and list.
 
@@ -196,7 +196,7 @@ eve event list --project $PROJECT_ID --type manual.test --json
 
 ### Scenario 05: Deploy Flow (~3m)
 
-Read: `../../incept5/eve-horizon/tests/manual/scenarios/05-deploy-flow.md`
+Read: `../../eve-horizon/eve-horizon/tests/manual/scenarios/05-deploy-flow.md`
 
 Full deploy pipeline: manifest sync, env create, build + release + deploy, verify ingress.
 
@@ -205,7 +205,7 @@ eve project ensure \
   --org $ORG_ID \
   --name "deploy-test-project" \
   --slug dtest \
-  --repo-url https://github.com/incept5/eve-horizon-fullstack-example \
+  --repo-url https://github.com/eve-horizon/eve-horizon-fullstack-example \
   --branch main \
   --force \
   --json
@@ -213,7 +213,7 @@ eve project ensure \
 # Set project secrets (see Required Secrets above)
 
 REPO_DIR=$(mktemp -d)/repo
-git clone --depth 1 https://github.com/incept5/eve-horizon-fullstack-example $REPO_DIR
+git clone --depth 1 https://github.com/eve-horizon/eve-horizon-fullstack-example $REPO_DIR
 
 # Sync manifest
 eve project sync --project $PROJECT_ID --dir $REPO_DIR --json

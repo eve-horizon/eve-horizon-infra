@@ -6,7 +6,7 @@ Please **do not** open public GitHub issues for security vulnerabilities.
 
 Report them privately via **[GitHub Private Vulnerability Reporting](https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-writing-information-about-vulnerabilities/privately-reporting-a-security-vulnerability)**
 (the "Report a vulnerability" button on the repository's **Security** tab), or by
-email to **security@incept5.com**.
+email to **security.com**.
 
 Please include:
 

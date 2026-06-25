@@ -21,7 +21,7 @@ terraform {
 }
 
 variable "name_prefix" {
-  description = "Prefix for state bucket / lock table names (match the main module's name_prefix, e.g. eve-staging)."
+  description = "Prefix for state bucket / lock table names (match the main module's name_prefix, e.g. eve-demo)."
   type        = string
 }
 

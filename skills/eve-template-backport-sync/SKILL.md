@@ -85,7 +85,7 @@ while IFS= read -r SRC; do
 done < <(git show --pretty=format: --name-only "$SHA")
 
 if ! git -C "$TEMPLATE_REPO" diff --cached --quiet; then
-  git -C "$TEMPLATE_REPO" commit -m "backport: $SUBJECT" -m "Source: incept5-eve-infra $SHA"
+  git -C "$TEMPLATE_REPO" commit -m "backport: $SUBJECT" -m "Source: deployment-instance-repo $SHA"
 fi
 ```
 

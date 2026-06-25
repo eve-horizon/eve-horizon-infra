@@ -17,10 +17,10 @@ This creates three hard problems:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  AWS Account 123456789012 — eu-west-1                           │
+│  AWS Account <aws-account-id> — eu-west-1                           │
 │                                                                  │
 │  ┌───────────────────────────┐   ┌──────────────────────────┐   │
-│  │ S3: eve-staging-terraform-state-… │   │ DynamoDB: eve-staging-tf-lock    │   │
+│  │ S3: eve-demo-terraform-state-… │   │ DynamoDB: eve-demo-tf-lock    │   │
 │  │ ├── env:/staging/         │   │ LockID (partition key)   │   │
 │  │ │   terraform.tfstate     │   │                          │   │
 │  │ ├── Versioning: Enabled   │   │ On-demand billing        │   │
@@ -72,7 +72,7 @@ provider "aws" {
 }
 
 resource "aws_s3_bucket" "tf_state" {
-  bucket = "eve-staging-terraform-state-123456789012"
+  bucket = "eve-demo-terraform-state-<aws-account-id>"
 }
 
 resource "aws_s3_bucket_versioning" "tf_state" {
@@ -103,7 +103,7 @@ resource "aws_s3_bucket_public_access_block" "tf_state" {
 }
 
 resource "aws_dynamodb_table" "tf_lock" {
-  name         = "eve-staging-tf-lock"
+  name         = "eve-demo-tf-lock"
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "LockID"
 
@@ -146,10 +146,10 @@ terraform {
   required_version = ">= 1.5.0"
 
   backend "s3" {
-    bucket         = "eve-staging-terraform-state-123456789012"
+    bucket         = "eve-demo-terraform-state-<aws-account-id>"
     key            = "env/staging/terraform.tfstate"
     region         = "eu-west-1"
-    dynamodb_table = "eve-staging-tf-lock"
+    dynamodb_table = "eve-demo-tf-lock"
     encrypt        = true
   }
 
@@ -195,7 +195,7 @@ terraform plan
 
 ### What happens under the hood:
 1. Terraform reads the local `terraform.tfstate`
-2. Uploads it to `s3://eve-staging-terraform-state-123456789012/env/staging/terraform.tfstate`
+2. Uploads it to `s3://eve-demo-terraform-state-<aws-account-id>/env/staging/terraform.tfstate`
 3. Acquires a DynamoDB lock during the upload
 4. Writes a local backup (`terraform.tfstate.backup`), then updates `.terraform/terraform.tfstate` to track the new backend
 
@@ -203,7 +203,7 @@ terraform plan
 
 ```bash
 # 1. Copy state to a safe location OUTSIDE the repo first
-cp terraform/aws/terraform.tfstate ~/eve-staging-terraform-state-backup-$(date +%Y%m%d).json
+cp terraform/aws/terraform.tfstate ~/eve-demo-terraform-state-backup-$(date +%Y%m%d).json
 
 # 2. Verify remote state is working BEFORE deleting local copies
 cd terraform/aws
@@ -235,8 +235,8 @@ Each operator needs AWS credentials with permission to:
         "s3:ListBucket"
       ],
       "Resource": [
-        "arn:aws:s3:::eve-staging-terraform-state-123456789012",
-        "arn:aws:s3:::eve-staging-terraform-state-123456789012/*"
+        "arn:aws:s3:::eve-demo-terraform-state-<aws-account-id>",
+        "arn:aws:s3:::eve-demo-terraform-state-<aws-account-id>/*"
       ]
     },
     {
@@ -247,13 +247,13 @@ Each operator needs AWS credentials with permission to:
         "dynamodb:DeleteItem",
         "dynamodb:DescribeTable"
       ],
-      "Resource": "arn:aws:dynamodb:eu-west-1:123456789012:table/eve-staging-tf-lock"
+      "Resource": "arn:aws:dynamodb:eu-west-1:<aws-account-id>:table/eve-demo-tf-lock"
     }
   ]
 }
 ```
 
-This can be attached to an IAM group (e.g., `eve-staging-terraform-operators`) so onboarding a new operator is: create IAM user, add to group, share secrets file.
+This can be attached to an IAM group (e.g., `eve-demo-terraform-operators`) so onboarding a new operator is: create IAM user, add to group, share secrets file.
 
 ### Phase 6: Commit Lock File for Provider Consistency
 
