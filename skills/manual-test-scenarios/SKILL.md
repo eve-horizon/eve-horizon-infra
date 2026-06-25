@@ -77,7 +77,7 @@ Scenarios 02-05 depend on these repos (clone next to `eve-horizon`):
 |------|---------|------|
 | `eve-horizon/eve-horizon` | All — scenario source | `../../eve-horizon/eve-horizon` |
 | `eve-horizon/eve-horizon-fullstack-example` | 02, 03, 05 | `../../eve-horizon/eve-horizon-fullstack-example` |
-| `incept5/reference-app` | 07 (not in first 5) | `../../eve-horizon/reference-app` |
+| `example/reference-app` | 07 (not in first 5) | `../../eve-horizon/reference-app` |
 
 ## Required Secrets
 

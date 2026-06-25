@@ -11,7 +11,7 @@ deployment can enable to get on-demand GPU inference via Ollama. The module
 provisions a spot GPU instance behind an ASG (desired=0), auto-starts when
 the Eve API needs inference, and auto-shuts down after idle timeout.
 
-This is already running on the Incept5 staging deployment (`deployment-instance-repo`).
+This is already running on the private staging deployment (`deployment-instance-repo`).
 This plan upstreams it into the template so every Eve deployment gets it as
 a first-class option.
 
