@@ -19,6 +19,7 @@ patches:
   - path: sso-deployment-patch.yaml
   - path: orchestrator-deployment-patch.yaml
   - path: worker-deployment-patch.yaml
+  - path: dashboard-deployment-patch.yaml
   # Delete db-migrate-job from kustomize build — it's a one-shot job
   # applied separately by the deploy workflow's migration step.
   - target:

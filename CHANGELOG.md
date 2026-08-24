@@ -11,10 +11,10 @@ Each entry includes **Sync impact** to guide what downstream agents need to do.
 
 ### fix: separate source publication from instance deployment
 
-- **Scope:** `.github/workflows/deploy.yml`, `bin/eve-infra`, `k8s/overlays/aws-eks/`, `k8s/overlays/gcp/`, `UPGRADE.md`, `skills/eve-horizon-release/SKILL.md`, `skills/eve-infra-ops/SKILL.md`, `skills/redeploy-if-necessary/SKILL.md`, `CLAUDE.md`
+- **Scope:** `.github/workflows/deploy.yml`, `bin/eve-infra`, `k8s/overlays/aws/`, `k8s/overlays/aws-eks/`, `k8s/overlays/gcp/`, `UPGRADE.md`, `skills/eve-horizon-release/SKILL.md`, `skills/eve-infra-ops/SKILL.md`, `skills/redeploy-if-necessary/SKILL.md`, `CLAUDE.md`
 - **Sync impact:**
   - `.github/workflows/deploy.yml` — manual merge (removes the obsolete `repository_dispatch` trigger and payload version path; preserves deploy tags and manual dispatch)
-  - `bin/eve-infra`, runner-image overlay patches — auto-sync safe (upgrade all seven services and use the published `worker` image for runner pods instead of legacy `worker-full`)
+  - `bin/eve-infra`, service and runner-image overlay patches — auto-sync safe (add the missing AWS dashboard override, upgrade all seven services, and use the published `worker` image for runner pods instead of legacy `worker-full`)
   - `UPGRADE.md`, `skills/`, `CLAUDE.md` — auto-sync safe (documents the public source's publish-only release model, ECR-backed version discovery, and instance-owner rollout boundary)
 
 ## [2026-02-14]
