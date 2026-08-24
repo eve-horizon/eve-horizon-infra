@@ -8,7 +8,6 @@
 # Triggers:
 #   - Tag push matching deploy-v* (e.g. deploy-v0.1.28)
 #   - Manual workflow_dispatch with optional version override
-#   - repository_dispatch from source repo CI (type: deploy, version in payload)
 #
 # Secrets required:
 #   KUBECONFIG       - Base64-encoded kubeconfig for the target cluster
@@ -29,9 +28,6 @@ on:
         description: 'Version to deploy (e.g. 0.1.28). Leave empty to use config/platform.yaml.'
         required: false
         type: string
-
-  repository_dispatch:
-    types: [deploy]
 
 permissions:
   contents: write
@@ -87,7 +83,7 @@ jobs:
 
       # -----------------------------------------------------------------------
       # Resolve effective version
-      #   Priority: tag > workflow_dispatch input > repository_dispatch payload > config
+      #   Priority: tag > workflow_dispatch input > config
       # -----------------------------------------------------------------------
       - name: Resolve version
         id: version
@@ -104,15 +100,7 @@ jobs:
             VERSION="${{ inputs.version }}"
           fi
 
-          # 3. From repository_dispatch payload
-          if [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
-            PAYLOAD_VERSION="${{ github.event.client_payload.version }}"
-            if [[ -n "$PAYLOAD_VERSION" ]]; then
-              VERSION="$PAYLOAD_VERSION"
-            fi
-          fi
-
-          # 4. Fallback to config/platform.yaml
+          # 3. Fallback to config/platform.yaml
           if [[ -z "$VERSION" ]]; then
             VERSION="${{ steps.config.outputs.version }}"
           fi

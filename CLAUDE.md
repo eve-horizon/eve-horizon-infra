@@ -21,7 +21,7 @@ terraform/gcp/           # Terraform modules (network, gke, sql, dns, ollama)
 bin/eve-infra            # Operational CLI (status, deploy, logs, db, secrets)
 
 .github/workflows/
-  deploy.yml             # Deploy on tag push, manual dispatch, or repository_dispatch
+  deploy.yml             # Deploy on an instance-owned tag push or manual dispatch
   health-check.yml       # Cron health check
   upgrade-check.yml      # Cron version upgrade detection
 ```

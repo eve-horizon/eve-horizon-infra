@@ -1,21 +1,22 @@
 ---
 name: eve-horizon-release
-description: Tag a new eve-horizon platform release. Bumps the semver patch, tags the source repo, and updates platform.yaml to match. Use when cutting a new staging release.
+description: Tag and verify a new public Eve Horizon platform release. Use when publishing service images from the canonical source repo; deployment remains a separate instance-owner action.
 ---
 
 # Eve Horizon Release
 
-Tag a new release of the eve-horizon source repo, which builds + publishes images and auto-deploys to staging.
+Tag a new release of the canonical public source repo. A release tag publishes images; it never deploys a cluster.
 
 ## When to Use
 
-- Cutting a new platform release for staging
+- Publishing a new platform release
 - User says "tag a release", "cut a release", "new release", "deploy new version"
 
 ## Prerequisites
 
-- The eve-horizon repo must be checked out at `../eve-horizon` (relative to this infra repo)
-- You must have push access to the eve-horizon remote
+- The canonical repo must be checked out at `../eve-horizon`
+- Its `origin` must be `eve-horizon/eve-horizon`; never push a release to the retired `Incept5` ancestor
+- You must have push access to the canonical remote
 
 ## Procedure
 
@@ -24,14 +25,17 @@ Tag a new release of the eve-horizon source repo, which builds + publishes image
 Run these in parallel:
 
 ```bash
-# Latest release tag
-cd ../eve-horizon && git tag --sort=-v:refname | grep '^release-v' | head -1
+# Verify canonical remote and refresh release refs
+git -C ../eve-horizon remote get-url origin
+git -C ../eve-horizon fetch origin main --tags
 
-# Unreleased commits since last tag (the changelog)
-cd ../eve-horizon && git log $(git tag --sort=-v:refname | grep '^release-v' | head -1)..HEAD --oneline
+# Latest release tag and unreleased changelog
+git -C ../eve-horizon tag --sort=-v:refname | grep '^release-v' | head -1
+git -C ../eve-horizon log $(git -C ../eve-horizon tag --sort=-v:refname | grep '^release-v' | head -1)..HEAD --oneline
 
 # Current branch and clean working tree check
-cd ../eve-horizon && git status --short && git branch --show-current
+git -C ../eve-horizon status --short
+git -C ../eve-horizon branch --show-current
 
 # Current platform.yaml version in this infra repo
 grep 'version:' config/platform.yaml
@@ -49,55 +53,53 @@ Show the user:
 
 Ask for confirmation before proceeding. If there are no unreleased commits, tell the user there's nothing new to release.
 
-### 3. Tag and Push
+### 3. Tag and Push One Ref
 
 After user confirms:
 
 ```bash
-cd ../eve-horizon && git tag release-v<NEXT_VERSION> && git push origin release-v<NEXT_VERSION>
+git -C ../eve-horizon tag release-v<NEXT_VERSION>
+git -C ../eve-horizon push origin refs/tags/release-v<NEXT_VERSION>
 ```
 
-### 4. Update platform.yaml
+Never use `git push --tags`: local history may contain release tags absent from the public remote, and every pushed `release-v*` tag triggers image publication.
 
-Update the version in this infra repo's `config/platform.yaml` to match the new release:
+### 4. Verify Publication
 
-```yaml
-platform:
-  version: "<NEXT_VERSION>"
-```
-
-Then commit and push:
+Monitor the public workflow and require all seven service images to succeed:
 
 ```bash
-git add config/platform.yaml
-git commit -m "chore: bump platform version to <NEXT_VERSION>"
-git push
+gh run list --repo eve-horizon/eve-horizon --workflow "Publish Images" --limit 1
+gh run watch <RUN_ID> --repo eve-horizon/eve-horizon
 ```
 
-### 5. Report
+The release is complete when `api`, `sso`, `gateway`, `agent-runtime`, `orchestrator`, `worker`, and `dashboard` are published at `<NEXT_VERSION>`.
+
+### 5. Keep Deployment Separate
+
+Do not edit any deployment instance's `config/platform.yaml` merely because images were published. If the user also asked for a rollout, wait for publication to pass and switch to the target instance repo's approved upgrade workflow. A source release must not use `repository_dispatch` or hold deployment credentials.
+
+### 6. Report
 
 Tell the user:
 
-- The tag that was pushed
-- That the publish-images workflow is now running (link: `https://github.com/eve-horizon/eve-horizon/actions`)
-- That once images are built, a `repository_dispatch` will auto-trigger the deploy workflow on this repo
-- That they can monitor the deploy at `https://github.com/your-org/deployment-instance-repo/actions`
+- The single tag ref that was pushed
+- The public workflow result: `https://github.com/eve-horizon/eve-horizon/actions`
+- That deployment instances remain pinned until an owner separately approves and runs a rollout
 
 ## What Happens After Tagging
 
 ```
 release-v0.1.147 pushed to eve-horizon
-  -> publish-images.yml runs (builds 6 service images ~3-5 min)
+  -> publish-images.yml runs (builds 7 service images)
   -> pushes images to public.ecr.aws/w7c4v0w3/eve-horizon/*:0.1.147
-  -> repository_dispatch -> deployment-instance-repo
-     -> deploy.yml runs (migrations, apply, rollout, health check ~3-5 min)
+  -> stops; a deployment instance owner chooses when to roll out
 ```
-
-Total time from tag to live: ~6-10 minutes.
 
 ## Safety Notes
 
 - Never tag from a branch other than `main` without explicit user approval
 - Never tag if the working tree is dirty
 - Always show the changelog and get confirmation before tagging
-- The deploy workflow has auto-rollback on failure
+- Push only the intended tag ref, never all local tags
+- Never treat a successful publish as proof that any cluster was upgraded

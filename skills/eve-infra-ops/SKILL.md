@@ -194,15 +194,14 @@ terraform/<cloud>/       # Infrastructure-as-code modules
 bin/eve-infra            # Operational CLI
 
 .github/workflows/
-  deploy.yml             # Triggered by tag, dispatch, or repository_dispatch
+  deploy.yml             # Triggered by an instance-owned tag or manual dispatch
 ```
 
 ## Deploy Flow
 
-Deploys are triggered three ways:
+Deploys are triggered two ways:
 
 1. **Tag push:** `git tag deploy-v0.1.86 && git push origin deploy-v0.1.86`
 2. **Manual dispatch:** `gh workflow run deploy.yml` (with optional version override)
-3. **Automatic:** Source repo pushes `repository_dispatch` after building images
 
-The workflow: read config → resolve version → configure kubectl → update image tags → run migrations → apply manifests → wait for rollouts → health check. Auto-rollback on failure.
+The workflow: read config → resolve version → configure kubectl → update image tags → run migrations → apply manifests → wait for rollouts → health check. Auto-rollback on failure. A public source release publishes images only; it never dispatches a deployment.
