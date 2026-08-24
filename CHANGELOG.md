@@ -11,10 +11,10 @@ Each entry includes **Sync impact** to guide what downstream agents need to do.
 
 ### fix: separate source publication from instance deployment
 
-- **Scope:** `.github/workflows/deploy.yml`, `skills/eve-horizon-release/SKILL.md`, `skills/eve-infra-ops/SKILL.md`, `CLAUDE.md`
+- **Scope:** `.github/workflows/deploy.yml`, `UPGRADE.md`, `skills/eve-horizon-release/SKILL.md`, `skills/eve-infra-ops/SKILL.md`, `skills/redeploy-if-necessary/SKILL.md`, `CLAUDE.md`
 - **Sync impact:**
   - `.github/workflows/deploy.yml` — manual merge (removes the obsolete `repository_dispatch` trigger and payload version path; preserves deploy tags and manual dispatch)
-  - `skills/`, `CLAUDE.md` — auto-sync safe (documents the public source's publish-only release model and instance-owner rollout boundary)
+  - `UPGRADE.md`, `skills/`, `CLAUDE.md` — auto-sync safe (documents the public source's publish-only release model, ECR-backed version discovery, and instance-owner rollout boundary)
 
 ## [2026-02-14]
 

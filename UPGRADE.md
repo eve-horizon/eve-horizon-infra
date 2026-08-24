@@ -20,7 +20,7 @@ How to upgrade your Eve Horizon deployment to a new platform version.
 bin/eve-infra version
 ```
 
-This shows your current pinned version and queries GitHub for the latest upstream release tag (`release-v*` on `eve-horizon/eve-horizon`). Uses `gh api` if available, falls back to `git ls-remote`. If a newer version exists, it tells you the exact command to upgrade.
+This shows your current pinned version and queries the public ECR registry for the latest published semver tag. If a newer version exists, it tells you the exact command to upgrade.
 
 ### Manually
 
