@@ -39,6 +39,7 @@ patches:
   - path: gateway-deployment-patch.yaml
   - path: orchestrator-deployment-patch.yaml
   - path: worker-deployment-patch.yaml
+  - path: dashboard-deployment-patch.yaml
   - path: sso-ingress-patch.yaml
   - path: sso-deployment-patch.yaml
   - path: supabase-auth-ingress-patch.yaml
@@ -92,8 +93,54 @@ patches:
       kind: Secret
       metadata:
         name: eve-postgres
-  # Remove registry resources (use external registry on GCP)
-  - path: remove-registry-resources.yaml
+  # Remove registry resources (use external registry on GCP). Keep these as
+  # single-resource targeted deletes; Kustomize v5 panics on a multi-document
+  # strategic-merge delete file under `patches`.
+  - target:
+      kind: ConfigMap
+      name: eve-registry-config
+    patch: |
+      $patch: delete
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: eve-registry-config
+  - target:
+      kind: ServiceAccount
+      name: eve-registry
+    patch: |
+      $patch: delete
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: eve-registry
+  - target:
+      kind: Deployment
+      name: eve-registry
+    patch: |
+      $patch: delete
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: eve-registry
+  - target:
+      kind: Service
+      name: eve-registry
+    patch: |
+      $patch: delete
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: eve-registry
+  - target:
+      kind: Ingress
+      name: eve-registry
+    patch: |
+      $patch: delete
+      apiVersion: networking.k8s.io/v1
+      kind: Ingress
+      metadata:
+        name: eve-registry
   # Set org filesystem PVC to Filestore (RWX required, GKE default is PD which is RWO only)
   - target:
       kind: PersistentVolumeClaim
