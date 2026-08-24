@@ -41,7 +41,7 @@ bin/eve-infra upgrade 0.2.0
 
 This single command:
 - Updates `platform.version` in `config/platform.yaml`
-- Updates all image tags in `k8s/overlays/<cloud>/*-patch.yaml`, including env var refs like `EVE_RUNNER_IMAGE`
+- Updates all seven service image tags in `k8s/overlays/<cloud>/*-patch.yaml` and normalises `EVE_RUNNER_IMAGE` to the published worker service image
 
 ### 2. Review Changes
 

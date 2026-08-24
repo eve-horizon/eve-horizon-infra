@@ -16,7 +16,7 @@ spec:
             - name: DATABASE_URL
               value: postgres://eve:REPLACE_ME@db.example.com:5432/eve
             - name: EVE_RUNNER_IMAGE
-              value: ghcr.io/eve-horizon/worker-full:latest
+              value: public.ecr.aws/w7c4v0w3/eve-horizon/worker:latest
             - name: EVE_DEFAULT_DOMAIN
               value: apps.example.com
             - name: EVE_COMPUTE_MODEL

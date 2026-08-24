@@ -311,9 +311,9 @@ jobs:
             done
           done
 
-          # Normalize EVE_RUNNER_IMAGE if present (supports worker and worker-full variants).
+          # Normalize EVE_RUNNER_IMAGE to the worker service image published by release-v*.
           for PATCH_FILE in "${PATCH_FILES[@]}"; do
-            perl -0pi -e "s|value:\\s*\"?[^\"\\s]*/worker(-full)?:[^\"\\s]+\"?|value: \"${REGISTRY}/worker\\1:${VERSION}\"|g" "$PATCH_FILE"
+            perl -0pi -e "s|value:\\s*\"?[^\"\\s]*/worker(?:-full)?:[^\"\\s]+\"?|value: \"${REGISTRY}/worker:${VERSION}\"|g" "$PATCH_FILE"
           done
 
           echo "=== Updated patch files ==="

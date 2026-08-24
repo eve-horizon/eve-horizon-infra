@@ -61,7 +61,7 @@ NEW_VERSION="<version from step 2>"
 
 This updates:
 - `config/platform.yaml` — the `platform.version` field
-- `k8s/overlays/<cloud>/*-patch.yaml` — all image tags, including env var refs like `EVE_RUNNER_IMAGE`
+- `k8s/overlays/<cloud>/*-patch.yaml` — all seven service tags, with `EVE_RUNNER_IMAGE` normalised to the published worker service image
 
 ### Step 4: Review the diff
 
