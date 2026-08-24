@@ -12,6 +12,7 @@ patches:
   - path: orchestrator-deployment-patch.yaml
   - path: worker-deployment-base-patch.yaml
   - path: worker-deployment-patch.yaml
+  - path: sso-deployment-patch.yaml
   - path: api-ingress-patch.yaml
   - path: gateway-ingress-patch.yaml
   - path: dashboard-deployment-patch.yaml

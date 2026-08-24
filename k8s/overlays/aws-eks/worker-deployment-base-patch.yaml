@@ -10,7 +10,7 @@ spec:
         - name: eve-registry
       containers:
         - name: worker
-          image: ghcr.io/eve-horizon/worker:latest
+          image: public.ecr.aws/w7c4v0w3/eve-horizon/worker:latest
           imagePullPolicy: IfNotPresent
           env:
             - name: DATABASE_URL

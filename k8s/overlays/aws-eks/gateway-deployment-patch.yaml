@@ -10,5 +10,5 @@ spec:
         - name: eve-registry
       containers:
         - name: gateway
-          image: ghcr.io/eve-horizon/gateway:latest
+          image: public.ecr.aws/w7c4v0w3/eve-horizon/gateway:latest
           imagePullPolicy: IfNotPresent

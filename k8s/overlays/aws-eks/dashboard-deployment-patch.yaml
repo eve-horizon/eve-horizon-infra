@@ -10,5 +10,5 @@ spec:
         - name: eve-registry
       containers:
         - name: dashboard
-          image: ghcr.io/eve-horizon/dashboard:latest
+          image: public.ecr.aws/w7c4v0w3/eve-horizon/dashboard:latest
           imagePullPolicy: IfNotPresent

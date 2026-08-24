@@ -1,0 +1,12 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: eve-sso
+  namespace: eve
+spec:
+  template:
+    spec:
+      containers:
+        - name: sso
+          image: public.ecr.aws/w7c4v0w3/eve-horizon/sso:latest
+          imagePullPolicy: IfNotPresent
