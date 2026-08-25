@@ -20,7 +20,9 @@ command -v kubectl >/dev/null || fail "kubectl with Kustomize v5 is required"
 
 if git -C "$REPO_ROOT" grep -n -I -i -E \
   'corf\.ai|corfai|api\.eh1\.incept5\.dev|org_Incept5|proj_[0-9a-z]{10,}|user_[0-9a-z]{10,}' \
-  -- . ':(exclude)scripts/validate-template.sh'; then
+  -- . \
+  ':(exclude)scripts/validate-template.sh' \
+  ':(exclude)skills/eve-template-backport-sync/SKILL.md'; then
   fail "template contains instance-specific domains, IDs, or names"
 fi
 
@@ -28,6 +30,11 @@ work_root="$(mktemp -d)"
 trap 'rm -rf "$work_root"' EXIT
 
 for overlay in "${OVERLAYS[@]}"; do
+  [[ -f "$REPO_ROOT/k8s/overlays/$overlay/db-migrate-job-patch.yaml" ]] \
+    || fail "$overlay is missing its deployment migration job"
+  [[ -f "$REPO_ROOT/k8s/overlays/$overlay/auth-bootstrap-job.yaml" ]] \
+    || fail "$overlay is missing its deployment auth bootstrap job"
+
   rendered="$work_root/${overlay}.yaml"
   kubectl kustomize "$REPO_ROOT/k8s/overlays/$overlay" >"$rendered"
 

@@ -467,7 +467,7 @@ cmd_upgrade() {
   echo "  Review changes:"
   echo "    git diff"
   echo ""
-  echo "  Commit and deploy:"
+  echo "  Commit and deploy (deploy runs pending DB migrations before rolling images):"
   echo "    git add -A && git commit -m \"chore: upgrade eve platform to ${new_version}\""
   echo "    eve-infra deploy"
 }
@@ -475,12 +475,32 @@ cmd_upgrade() {
 cmd_deploy() {
   require_cluster_access write
 
+  local skip_migrate=false
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --skip-migrate) skip_migrate=true; shift ;;
+      *) die "Unknown deploy flag: $1
+  Usage: eve-infra deploy [--skip-migrate]" ;;
+    esac
+  done
+
   local overlay
   overlay="$(cfg_get 'overlay')"
   [[ -z "$overlay" ]] && overlay="$(cfg_get 'cloud')"
   local overlay_dir="$REPO_ROOT/k8s/overlays/${overlay}"
 
   [[ -d "$overlay_dir" ]] || die "Overlay directory not found: $overlay_dir"
+
+  # Migrations run before rollout so new pods come up against the new schema.
+  # Use --skip-migrate only when a migration needs deliberate hand-staging.
+  if [[ "$skip_migrate" == "true" ]]; then
+    warn "Skipping database migrations (--skip-migrate). Run 'eve-infra db migrate' before deploy if the new version requires schema changes."
+    echo ""
+  else
+    info "Applying database migrations before rollout..."
+    cmd_db_migrate
+    echo ""
+  fi
 
   info "Building manifests with kustomize (overlay: ${overlay})..."
   if command -v kustomize &>/dev/null; then
@@ -563,17 +583,14 @@ cmd_db_migrate() {
   local overlay_dir="$REPO_ROOT/k8s/overlays/${overlay}"
 
   info "Applying migration job..."
-  if [[ -d "$overlay_dir" ]]; then
-    # Build with kustomize to get the overlay-patched job (correct image + DATABASE_URL)
-    if command -v kustomize &>/dev/null; then
-      kustomize build "$overlay_dir" \
-        | kube apply -f - -n "$NAMESPACE" --server-side --field-manager=eve-infra \
-        -l app.kubernetes.io/name=eve-db-migrate 2>/dev/null \
-        || kustomize build "$overlay_dir" | kube apply -f - -n "$NAMESPACE"
-    else
-      kube apply -k "$overlay_dir" -n "$NAMESPACE"
-    fi
+  # The overlay kustomization deletes the immutable one-shot Job from its
+  # rendered output. Apply the overlay's complete Job manifest directly so a
+  # migration never falls back to applying the full service stack.
+  local overlay_job="$overlay_dir/db-migrate-job-patch.yaml"
+  if [[ -f "$overlay_job" ]]; then
+    kube apply -f "$overlay_job" -n "$NAMESPACE"
   else
+    warn "No overlay-specific migrate Job manifest at $overlay_job; falling back to base."
     kube apply -f "$REPO_ROOT/k8s/base/db-migrate-job.yaml" -n "$NAMESPACE"
   fi
 
@@ -590,6 +607,51 @@ cmd_db_migrate() {
     echo "    kubectl --kubeconfig $KUBECONFIG_FILE -n $NAMESPACE logs job/$job_name"
     exit 1
   fi
+}
+
+cmd_db_status() {
+  require_cluster_access read
+
+  local provider
+  provider="$(cfg_get 'database.provider')"
+
+  echo -e "${BOLD}Database Migration Status${RESET}"
+  echo ""
+
+  case "$provider" in
+    rds|cloud-sql|external)
+      local overrides
+      overrides='{"spec":{"containers":[{"name":"psql","image":"postgres:16-alpine","stdin":true,"command":["sh","-c"],"args":["psql \"$DATABASE_URL\" -tA -F\"|\" -c \"SELECT count(*), coalesce(max(name), '"'"'(none)'"'"') FROM _migrations;\" 2>&1 || echo \"ERROR\""],"envFrom":[{"secretRef":{"name":"eve-app"}}]}]}}'
+      local out
+      out="$(kube run eve-db-status --rm -i --image=postgres:16-alpine \
+        --namespace="$NAMESPACE" --restart=Never \
+        --overrides="$overrides" 2>/dev/null || true)"
+      local row
+      row="$(echo "$out" | grep -E '^[0-9]+\|' | head -1)"
+      if [[ -z "$row" ]]; then
+        warn "Could not query _migrations table. Raw output:"
+        echo "$out"
+        return 1
+      fi
+      local applied last
+      applied="${row%%|*}"
+      last="${row#*|}"
+      echo "  Applied:      ${GREEN}${applied}${RESET}"
+      echo "  Last applied: ${last}"
+      echo ""
+      echo "  Migrations are bundled into the eve-api image and run via 'eve-infra db migrate'"
+      echo "  (also runs automatically as part of 'eve-infra deploy')."
+      ;;
+    in-cluster)
+      info "Database provider: in-cluster PostgreSQL"
+      kube exec -n "$NAMESPACE" postgres-0 -- psql -U eve eve -tA -F"|" -c \
+        "SELECT count(*), coalesce(max(name), '(none)') FROM _migrations;" 2>/dev/null \
+        || warn "Could not query _migrations from in-cluster postgres."
+      ;;
+    *)
+      die "Unknown database provider: $provider"
+      ;;
+  esac
 }
 
 cmd_db_backup() {
@@ -771,7 +833,7 @@ Platform:
   kubeconfig doctor   Validate config/kubeconfig.yaml and cluster connectivity
   kubeconfig refresh  Regenerate config/kubeconfig.yaml (aws/eks)
   upgrade <version>   Update platform.yaml, patch overlays for new version
-  deploy              Apply current config to cluster (kustomize build | kubectl apply)
+  deploy              Run pending migrations + apply current config (use --skip-migrate to deploy without migrating)
   health              Run health check against the API endpoint
 
 Secrets:
@@ -779,7 +841,8 @@ Secrets:
   secrets show        List which secret keys are configured
 
 Database:
-  db migrate          Run the database migration job
+  db status           Show applied migration count and last-applied filename
+  db migrate          Run the database migration job (also auto-run by deploy)
   db backup           Show backup instructions for your database provider
   db connect          Open an interactive psql session
 
@@ -848,10 +911,11 @@ main() {
       local sub="${1:-}"
       shift 2>/dev/null || true
       case "$sub" in
+        status)  cmd_db_status "$@" ;;
         migrate) cmd_db_migrate "$@" ;;
         backup)  cmd_db_backup "$@" ;;
         connect) cmd_db_connect "$@" ;;
-        *)       die "Usage: eve-infra db <migrate|backup|connect>" ;;
+        *)       die "Usage: eve-infra db <status|migrate|backup|connect>" ;;
       esac
       ;;
 

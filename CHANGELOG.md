@@ -9,6 +9,20 @@ Each entry includes **Sync impact** to guide what downstream agents need to do.
 
 ## [2026-08-25]
 
+### fix: preserve migration safety and complete auth bootstrap overlays
+
+- **Scope:** `bin/eve-infra`, `k8s/base/supabase-auth-deployment.yaml`,
+  `k8s/overlays/{aws-eks,gcp}/auth-bootstrap-job.yaml`,
+  `scripts/validate-template.sh`, `skills/eve-template-backport-sync/`
+- **Sync impact:**
+  - `bin/eve-infra`, auth URL paths, and auth bootstrap jobs — auto-sync safe
+    (deploy runs migrations before rollout, migration commands apply only the
+    one-shot Job, migration status is inspectable, and every supported overlay
+    has the auth bootstrap file consumed by the deploy workflow)
+  - `scripts/validate-template.sh` — template-only CI assertion
+  - `skills/eve-template-backport-sync/` — auto-sync safe; restores the
+    mandatory instance-value scrub before public-template staging
+
 ### ci: validate the generic infrastructure template
 
 - **Scope:** `.github/workflows/`, `scripts/validate-template.sh`,

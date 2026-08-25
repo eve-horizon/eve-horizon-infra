@@ -51,7 +51,22 @@ Policy:
 
 Backport automatically when commit matches `always` or clearly updates paths shared by the template.
 
-## 5) Apply Backport Commits (No Approval Loop)
+## 5) Scrub Instance-Specific Values
+
+The source is a deployment instance. Before writing a file to the public
+template, replace every instance domain, account, project, region, service
+account, pinned version, and operator identity with the template's existing
+`example.com`, `INSTANCE_PREFIX`, `GCP_PROJECT`, `YOUR_REGION`, `latest`, and
+`admin@example.com` conventions. Base manifests use `lvh.me` local defaults.
+
+After editing, scan every changed template file and stop on a match:
+
+```bash
+git -C "$TEMPLATE_REPO" diff --name-only -z | \
+  xargs -0 grep -nEi 'corf\.ai|corfai|api\.eh1\.incept5\.dev|org_Incept5|proj_[0-9a-z]{10,}|user_[0-9a-z]{10,}' -- 2>/dev/null
+```
+
+## 6) Apply Backport Commits (No Approval Loop)
 
 For each commit you classify as backport:
 
@@ -76,6 +91,7 @@ while IFS= read -r SRC; do
   if git cat-file -e "$SHA:$SRC" 2>/dev/null; then
     mkdir -p "$(dirname "$DEST_PATH")"
     git show "$SHA:$SRC" > "$DEST_PATH"
+    # SCRUB: replace all deployment-instance values before staging (Step 5).
     git -C "$TEMPLATE_REPO" add "$DEST"
   else
     # Deleted in source commit
@@ -89,7 +105,7 @@ if ! git -C "$TEMPLATE_REPO" diff --cached --quiet; then
 fi
 ```
 
-## 6) Update Metadata After Backport Pass
+## 7) Update Metadata After Backport Pass
 
 ```bash
 NOW="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -106,9 +122,12 @@ jq \
   "$META" > "$TMP" && mv "$TMP" "$META"
 ```
 
-## 7) Verify
+## 8) Verify
 
 ```bash
 git -C "$TEMPLATE_REPO" log --oneline -n 10
 cat "$META"
 ```
+
+Do not push until template renders, Terraform validation, shell syntax, and the
+instance-value scan are all green.
