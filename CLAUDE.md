@@ -75,7 +75,7 @@ Install agent skills:
 eve skills install
 ```
 
-This reads `skills.txt` and installs from `skills/` into `.agent/skills/` + `.claude/skills/`.
+This reads `skills.txt` and installs from `skills/` into `.agents/skills/` + `.claude/skills/`.
 
 Available local skills:
 - `eve-infra-ops` — operational guidance for debugging and managing this deployment
