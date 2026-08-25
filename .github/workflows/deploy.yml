@@ -39,6 +39,9 @@ env:
 jobs:
   deploy:
     name: Deploy Eve Platform
+    # The canonical repository is a reusable template, not an Eve instance.
+    # Downstream copies retain this workflow and own their deployment trigger.
+    if: github.repository != 'eve-horizon/eve-horizon-infra'
     runs-on: ubuntu-latest
     environment: production
 

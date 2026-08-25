@@ -1,0 +1,58 @@
+name: Template CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: template-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  manifests:
+    name: Manifests and upgrade contract
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.32.2
+
+      - name: Validate template
+        run: ./scripts/validate-template.sh
+
+  terraform:
+    name: Terraform (${{ matrix.root }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        root:
+          - terraform/aws-backend
+          - terraform/aws
+          - terraform/gcp
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.15.8
+
+      - name: Check formatting
+        run: terraform fmt -check -recursive terraform
+
+      - name: Initialise providers
+        run: terraform -chdir=${{ matrix.root }} init -backend=false -input=false
+
+      - name: Validate configuration
+        run: terraform -chdir=${{ matrix.root }} validate

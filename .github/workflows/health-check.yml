@@ -25,6 +25,8 @@ permissions:
 jobs:
   health-check:
     name: API Health Check
+    # Placeholder template config is not a live instance health target.
+    if: github.repository != 'eve-horizon/eve-horizon-infra'
     runs-on: ubuntu-latest
 
     steps:

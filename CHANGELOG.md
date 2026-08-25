@@ -7,6 +7,29 @@ Each entry includes **Sync impact** to guide what downstream agents need to do.
 
 ---
 
+## [2026-08-25]
+
+### ci: validate the generic infrastructure template
+
+- **Scope:** `.github/workflows/`, `scripts/validate-template.sh`,
+  `.upstream-sync.example.json`, `CLAUDE.md`, `skills/upstream-sync/`,
+  `skills/manual-test-scenarios/`, `terraform/aws-backend/outputs.tf`,
+  `terraform/{aws,gcp}/.terraform.lock.hcl`
+- **Sync impact:**
+  - `.github/workflows/`, `scripts/validate-template.sh` — auto-sync safe (the
+    canonical template skips instance-only deploy, health, and release checks;
+    downstream copies continue to run them, while template CI renders all
+    overlays and validates coordinated upgrades and Terraform)
+  - `.upstream-sync.example.json`, `CLAUDE.md`, `skills/upstream-sync/` — manual
+    merge (generic skills remain auto-sync; instance-owned manual test guidance
+    is explicitly `never`)
+  - `skills/manual-test-scenarios/` — remove from the public template only;
+    downstream instances must retain their private deployment-specific copy
+  - `terraform/aws-backend/outputs.tf` — auto-sync safe (removes duplicate
+    output declarations; the documented outputs remain in `main.tf`)
+  - `terraform/{aws,gcp}/.terraform.lock.hcl` — auto-sync safe (records every
+    provider required by credential-free validation)
+
 ## [2026-08-24]
 
 ### fix: separate source publication from instance deployment

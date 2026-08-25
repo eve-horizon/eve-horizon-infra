@@ -26,6 +26,8 @@ permissions:
 jobs:
   check-upgrade:
     name: Check for Platform Upgrade
+    # Release detection belongs to each downstream deployment instance.
+    if: github.repository != 'eve-horizon/eve-horizon-infra'
     runs-on: ubuntu-latest
 
     steps:

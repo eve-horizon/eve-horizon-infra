@@ -101,7 +101,9 @@ Typical "always" paths:
 - `bin/eve-infra` — operational CLI
 - `scripts/` — utility scripts
 - `.github/workflows/` — CI/CD workflows
-- `skills/` and `skills.txt` — agent skills
+- The generic skill directories named by the policy, plus `skills.txt` —
+  shared agent skills. Preserve instance-only skills such as
+  `skills/manual-test-scenarios/` under the `never` policy.
 
 ### Step 6: Review "ask" files
 

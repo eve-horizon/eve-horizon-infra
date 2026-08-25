@@ -17,7 +17,12 @@
       "bin/eve-infra",
       "scripts/",
       ".github/workflows/",
-      "skills/",
+      "skills/check-spend/",
+      "skills/eve-horizon-release/",
+      "skills/eve-infra-ops/",
+      "skills/eve-template-backport-sync/",
+      "skills/redeploy-if-necessary/",
+      "skills/upstream-sync/",
       "skills.txt"
     ],
     "never": [
@@ -25,7 +30,8 @@
       "config/secrets.env",
       "config/kubeconfig.yaml",
       ".upstream-sync.json",
-      "terraform/*/terraform.tfvars"
+      "terraform/*/terraform.tfvars",
+      "skills/manual-test-scenarios/"
     ],
     "ask": [
       "k8s/overlays/",

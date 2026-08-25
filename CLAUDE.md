@@ -110,7 +110,7 @@ This repo is an **infrastructure template**. Downstream users clone it (not fork
 **For template maintainers** (this repo):
 - Always update `CHANGELOG.md` when making changes — include sync impact annotations
 - Use the sync policy tiers when deciding where new files belong
-- New shared infrastructure goes in "always" paths; instance-customizable files go in "ask" paths
+- New shared infrastructure goes in "always" paths; instance-customizable files go in "ask" or "never" paths
 
 **For downstream repos:**
 - `.upstream-sync.json` tracks sync state (created by `eve-infra sync init`, committed to your repo)
@@ -119,6 +119,6 @@ This repo is an **infrastructure template**. Downstream users clone it (not fork
 - Use the `upstream-sync` skill for agent-driven sync with review of "ask" files
 
 **Sync policy tiers:**
-- **always** — shared infra overwritten from upstream (`k8s/base/`, `terraform/*/modules/`, `bin/eve-infra`, `scripts/`, `.github/workflows/`, `skills/`)
-- **never** — instance-specific, never touched (`config/platform.yaml`, `config/secrets.env`, `terraform/*/terraform.tfvars`)
+- **always** — shared infra overwritten from upstream (`k8s/base/`, `terraform/*/modules/`, `bin/eve-infra`, `scripts/`, `.github/workflows/`, and the named generic skill directories in `.upstream-sync.example.json`)
+- **never** — instance-specific, never touched (`config/platform.yaml`, `config/secrets.env`, `terraform/*/terraform.tfvars`, `skills/manual-test-scenarios/`)
 - **ask** — may have local customizations, review before accepting (`k8s/overlays/`, `terraform/*/main.tf`, `CLAUDE.md`, docs)
