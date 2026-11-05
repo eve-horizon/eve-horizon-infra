@@ -15,6 +15,10 @@ environment = "staging"
 allowed_ssh_cidrs = ["0.0.0.0/0"]       # CHANGE THIS — restrict to your IP
 allowed_api_cidrs = ["0.0.0.0/0"]       # CHANGE THIS — restrict K8s API access
 
+# Dataplane V2 enforces NetworkPolicy (on by default). Creation-time only:
+# flipping it later never rebuilds an existing cluster.
+# enable_dataplane_v2 = true
+
 # --- GKE Node Pools ---
 # Default pool runs core services (API, Worker, Orchestrator, Gateway)
 compute_type = "e2-standard-2"  # 2 vCPU, 8 GB

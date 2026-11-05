@@ -21,6 +21,13 @@ resource "google_container_cluster" "main" {
   subnetwork = var.subnet_name
 
   networking_mode = "VPC_NATIVE"
+
+  # GKE Dataplane V2 enforces Kubernetes NetworkPolicy (BuildKit, worker,
+  # agent-runtime and runner ingress rules in the overlays). GKE can only set
+  # it when the cluster is created, so lifecycle.ignore_changes below keeps
+  # this from ever replacing an existing cluster; see network_policy_enforced.
+  datapath_provider = var.enable_dataplane_v2 ? "ADVANCED_DATAPATH" : null
+
   ip_allocation_policy {
     cluster_secondary_range_name  = var.pods_range_name
     services_secondary_range_name = var.services_range_name
@@ -67,9 +74,11 @@ resource "google_container_cluster" "main" {
     }
   }
 
-  # Ignore node pool changes (managed separately)
+  # Ignore node pool changes (managed separately). datapath_provider is a
+  # creation-time setting: ignoring it means new clusters get Dataplane V2
+  # while existing clusters are never destroyed to change it.
   lifecycle {
-    ignore_changes = [initial_node_count]
+    ignore_changes = [initial_node_count, datapath_provider]
   }
 }
 

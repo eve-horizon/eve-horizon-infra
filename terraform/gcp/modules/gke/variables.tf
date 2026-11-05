@@ -100,3 +100,9 @@ variable "service_account_email" {
   description = "Service account email for GKE nodes"
   type        = string
 }
+
+variable "enable_dataplane_v2" {
+  description = "Create the cluster with GKE Dataplane V2 (ADVANCED_DATAPATH), which enforces NetworkPolicy. Creation-time only: changing it never replaces an existing cluster (see the network_policy_enforced output)."
+  type        = bool
+  default     = true
+}
