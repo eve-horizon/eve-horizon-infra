@@ -7,6 +7,31 @@ Each entry includes **Sync impact** to guide what downstream agents need to do.
 
 ---
 
+## [2026-11-05]
+
+### fix: order GCP Workload Identity bindings after the GKE cluster
+
+The storage module's Workload Identity bindings built the pool name from the
+project ID and had no dependency on the cluster that creates the pool, so a
+first `terraform apply` could fail with `Identity Pool does not exist` and
+need a second run. The GKE module now exports `workload_pool`, and the root
+module passes it to the storage module, which orders the bindings after the
+cluster. The member strings are unchanged.
+
+- **Scope:** `terraform/gcp/modules/gke/outputs.tf`,
+  `terraform/gcp/modules/storage/`, `terraform/gcp/main.tf`,
+  `terraform/gcp/tests/storage.tftest.hcl`, `.github/workflows/template-ci.yml`
+- **Sync impact:**
+  - `terraform/gcp/modules/` — auto-sync safe (new `workload_pool` output and
+    optional input; without the input the module behaves as before, and
+    `terraform plan` shows no change for an existing install)
+  - `terraform/gcp/main.tf` — manual merge (pass
+    `workload_pool = module.gke.workload_pool` to `module "storage"`; plan
+    shows no change)
+  - `terraform/gcp/tests/`, `.github/workflows/template-ci.yml` — auto-sync
+    safe (offline `terraform test` with a mocked Google provider; needs
+    Terraform >= 1.7)
+
 ## [2026-08-25]
 
 ### fix: preserve migration safety and complete auth bootstrap overlays

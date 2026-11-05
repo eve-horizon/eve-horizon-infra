@@ -29,13 +29,20 @@ resource "google_service_account_iam_member" "storage_token_creator" {
   member             = "serviceAccount:${google_service_account.storage.email}"
 }
 
+locals {
+  # The pool only exists once the GKE cluster does. Taking it from the GKE
+  # module (var.workload_pool) orders these bindings after the cluster; the
+  # fallback keeps older root modules working but has no such ordering.
+  workload_pool = coalesce(var.workload_pool, "${var.project_id}.svc.id.goog")
+}
+
 # Workload Identity bindings — let eve KSAs act as the storage GSA
 resource "google_service_account_iam_member" "workload_identity" {
   for_each = toset(var.workload_identity_ksas)
 
   service_account_id = google_service_account.storage.name
   role               = "roles/iam.workloadIdentityUser"
-  member             = "serviceAccount:${var.project_id}.svc.id.goog[${var.k8s_namespace}/${each.value}]"
+  member             = "serviceAccount:${local.workload_pool}[${var.k8s_namespace}/${each.value}]"
 }
 
 # Internal bucket — platform data (versioned, private, uniform access)

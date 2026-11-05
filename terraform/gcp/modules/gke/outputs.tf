@@ -24,3 +24,8 @@ output "ingress_ip" {
   description = "Static IP for the ingress load balancer"
   value       = google_compute_address.ingress.address
 }
+
+output "workload_pool" {
+  description = "Workload Identity pool the cluster creates (<project>.svc.id.goog). IAM bindings for Kubernetes service accounts should reference this output so they wait for the pool to exist."
+  value       = google_container_cluster.main.workload_identity_config[0].workload_pool
+}

@@ -119,6 +119,9 @@ module "storage" {
   name_prefix = var.name_prefix
   location    = local.effective_region
   project_id  = var.gcp_project_id
+
+  # Bind KSAs only after the cluster has created the Workload Identity pool
+  workload_pool = module.gke.workload_pool
 }
 
 # -----------------------------------------------------------------------------
