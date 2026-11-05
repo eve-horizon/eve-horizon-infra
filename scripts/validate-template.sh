@@ -43,6 +43,27 @@ for overlay in "${OVERLAYS[@]}"; do
       || fail "$overlay render is missing the $service service image"
   done
 
+  # The orchestrator sends an org's work to the agent runtime pod that owns its
+  # shard, by pod name, through EVE_AGENT_RUNTIME_URLS. Every replica the
+  # overlay runs must be in that map, or work routed to it fails.
+  runtime_replicas="$(awk '
+    /^---$/ { kind = ""; name = "" }
+    /^kind: / { kind = $2 }
+    /^  name: / { name = $2 }
+    kind == "StatefulSet" && name == "eve-agent-runtime" && /^  replicas: / { print $2; exit }
+  ' "$rendered")"
+  [[ "$runtime_replicas" =~ ^[0-9]+$ ]] \
+    || fail "$overlay render sets no replica count on eve-agent-runtime"
+  runtime_urls="$(awk '
+    /- name: EVE_AGENT_RUNTIME_URLS$/ { grab = 1; next }
+    grab && /^[[:space:]]*(- |[A-Za-z_]+:)/ && !/^[[:space:]]*value:/ { exit }
+    grab { print }
+  ' "$rendered")"
+  for ((replica = 0; replica < runtime_replicas; replica++)); do
+    grep -Fq "eve-agent-runtime-${replica}=" <<<"$runtime_urls" \
+      || fail "$overlay runs eve-agent-runtime-${replica} but EVE_AGENT_RUNTIME_URLS does not map it"
+  done
+
   upgrade_root="$work_root/upgrade-$overlay"
   mkdir -p "$upgrade_root"
   cp -R "$REPO_ROOT/bin" "$REPO_ROOT/config" "$REPO_ROOT/k8s" "$upgrade_root/"

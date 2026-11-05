@@ -21,9 +21,10 @@ compute_type = "e2-standard-2"  # 2 vCPU, 8 GB
 default_node_min = 1
 default_node_max = 2
 
-# Agent pool runs agent-runtime pods on spot VMs (60-90% cheaper)
+# Agent pool runs agent-runtime pods and BuildKit on spot VMs (60-90% cheaper).
+# The agent runtime is always scheduled here, so one node stays up even at min 0.
 agent_node_machine_type = "e2-standard-2"    # 2 vCPU, 8 GB
-agent_node_min = 0                           # Scales to zero when idle
+agent_node_min = 0                           # One node still runs for the agent runtime
 agent_node_max = 2
 
 # Apps pool runs user-deployed app services on spot VMs
