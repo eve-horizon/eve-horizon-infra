@@ -13,6 +13,7 @@ Each entry includes **Sync impact** to guide what downstream agents need to do.
 
 - **Scope:** `k8s/base/registry-deployment.yaml`, `k8s/base/registry-ingress.yaml`,
   `k8s/overlays/gcp/kustomization.yaml`, `k8s/overlays/gcp/registry-*.yaml` (new),
+  `k8s/overlays/gcp/{api,gateway,dashboard}-ingress-patch.yaml`,
   `bin/eve-infra`, `scripts/validate-template.sh`, `scripts/lint-kubectl-safety.sh`,
   `DEPLOYMENT.md`, `README.md`
 - **What changed:**
@@ -38,6 +39,16 @@ Each entry includes **Sync impact** to guide what downstream agents need to do.
     exist.
   - `scripts/validate-template.sh` fails any overlay whose registry would not
     read its token-auth config, and tests the deploy check with stubs.
+  - Every GCP ingress now serves HTTPS. `eve-api` and `eve-gateway` had no
+    TLS, so the registry's token realm (`https://<api_host>/...`) and every
+    client hit a host without a certificate. Both now use one `eve-api-tls`
+    secret for the shared host; only `eve-api` carries the
+    `letsencrypt-prod` issuer, so a single Ingress owns the Certificate.
+    `eve-dashboard` rendered the base's local-dev host with no class; it now
+    gets `dashboard.eve.example.com` with TLS. `scripts/setup.sh` already
+    creates the `letsencrypt-prod` ClusterIssuer with an nginx solver on GCP.
+    Validation fails any GCP Ingress host without TLS on the nginx class, or
+    any TLS secret no Ingress asks cert-manager to issue.
 - **Sync impact:**
   - `k8s/base/registry-*.yaml` — action required for `aws-eks`: the registry
     moves from `registry:2` to distribution v3 (S3 storage layout unchanged).
@@ -57,6 +68,13 @@ Each entry includes **Sync impact** to guide what downstream agents need to do.
     realm in the overlay before deploying. A GCP instance that pushes app
     images to its own registry instead can keep the registry deletes in its
     kustomization; deploy then skips the check.
+  - `k8s/overlays/gcp/{api,gateway,dashboard}-ingress-patch.yaml` — manual
+    merge. Keep your hosts and add the `tls` blocks and the `eve-api`
+    issuer annotation. The dashboard ingress is newly reachable at
+    `dashboard.<domain>`: an instance that does not publish the dashboard
+    should delete the `eve-dashboard` Ingress in its kustomization instead.
+    cert-manager issues the new certificates on the first deploy (HTTP-01
+    through ingress-nginx), so allow a minute before the API host serves HTTPS.
   - `bin/eve-infra`, `scripts/` — auto-sync safe (deploy fails loudly on an
     unauthenticated registry; the kubectl lint allows only the offline
     `annotate --local` form)
