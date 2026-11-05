@@ -35,3 +35,6 @@ spec:
               value: "INSTANCE_PREFIX-eve-internal"
             - name: EVE_STORAGE_ORG_BUCKET_PREFIX
               value: "INSTANCE_PREFIX-eve-org"
+            # Same as the worker: the API refuses custom domains under it.
+            - name: EVE_DEFAULT_DOMAIN
+              value: apps.eve.example.com

@@ -7,6 +7,67 @@ Each entry includes **Sync impact** to guide what downstream agents need to do.
 
 ---
 
+## [2026-11-05]
+
+### fix: stop custom domains from claiming platform hosts on GCP
+
+The GCP DNS module published an apex and a `*.<domain>` wildcard at the
+platform ingress, so any name under the domain passed custom-domain DNS
+verification and a project could serve `auth.<domain>`, `sso.<domain>` or
+similar. DNS now publishes only named platform hosts and `*.apps.<domain>`,
+and a GKE admission policy refuses tenant ingresses on platform hosts.
+
+- **Scope:** `terraform/gcp/modules/dns/` (`main.tf`, `variables.tf`,
+  `outputs.tf`), `terraform/gcp/main.tf`, `terraform/gcp/variables.tf`,
+  `terraform/gcp/outputs.tf`, `terraform/gcp/terraform.tfvars.example`,
+  `k8s/overlays/gcp/ingress-host-policy.yaml` (new),
+  `k8s/overlays/gcp/kustomization.yaml`,
+  `k8s/overlays/gcp/{worker,api}-deployment-patch.yaml`,
+  `scripts/validate-template.sh`, `scripts/validate-template.d/` (new)
+- **What changes:**
+  - DNS: A records for `dns_platform_hosts` (default `api`, `registry`,
+    `auth`, `sso`, `dashboard`, `ingress`) under the domain, plus
+    `*.apps.<domain>`. The apex and `*.<domain>` exist only while
+    `dns_legacy_wildcard_records = true` (default `false`). The existing
+    `registry` record moves into the new set in state (`moved` block), so it
+    is not recreated. Root output `api_url` now reports `https://api.<domain>`.
+  - Admission (`eve-ingress-host-guard`, Kubernetes 1.30+): an Ingress
+    written by an Eve controller, or by anyone into an environment
+    namespace (label `eve.env_id`), may only use hosts under the platform
+    domain that are under the app domain; no wildcard or host-less rules
+    and no default backend. Custom domains outside the platform domain and
+    the platform's own ingresses in `eve` are unaffected.
+  - The GKE API now gets `EVE_DEFAULT_DOMAIN` (it had none, so its
+    custom-domain check did nothing), and the overlay placeholder becomes
+    `apps.eve.example.com` to match the DNS app wildcard.
+- **Sync impact:**
+  - `terraform/gcp/modules/dns/` — **action required: this removes live DNS
+    records.** Names that resolved only through `*.<domain>` or the apex stop
+    resolving. Migrate in two applies:
+    1. List every host you serve under `<domain>` (platform ingresses, any
+       ops tools, custom domains under the domain). Add any label missing
+       from the default to `dns_platform_hosts`.
+    2. Apply with `dns_legacy_wildcard_records = true`: this adds the named
+       records and keeps the apex and wildcard. Check each host resolves
+       (`dig +short api.<domain>`).
+    3. Remove the setting (default `false`) and apply again: Terraform
+       destroys only the apex and `*.<domain>` records.
+    A single apply also works, but destroys the wildcard while creating the
+    named records, so a resolver may cache a miss for a platform host for up
+    to the zone's negative TTL (Cloud DNS default: 300 seconds).
+  - `terraform/gcp/{main,variables,outputs}.tf`, `terraform.tfvars.example` —
+    manual merge (pass the two DNS variables through; fix `api_url`).
+  - `k8s/overlays/gcp/` — manual merge. Set the policy's `platformDomain` to
+    your Terraform `domain` and `appDomain` to your `EVE_DEFAULT_DOMAIN`
+    (`apps.<domain>`), and set the same `EVE_DEFAULT_DOMAIN` on the API.
+    Before applying, check `kubectl get ingress -A` for environment-namespace
+    hosts under `<domain>` but outside `apps.<domain>`: their next deploy
+    will be refused; move them to an app alias or a domain you own.
+  - `scripts/` — template CI assertions (no unconditional apex or wildcard
+    record; DNS host defaults agree; policy domains, worker and API
+    `EVE_DEFAULT_DOMAIN` and the API host agree; every platform ingress host
+    has a record).
+
 ## [2026-08-25]
 
 ### fix: preserve migration safety and complete auth bootstrap overlays

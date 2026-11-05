@@ -84,4 +84,11 @@ for overlay in "${OVERLAYS[@]}"; do
   done
 done
 
+# Behaviour assertions on the renders above, one file per change, sorted.
+for check in "$SCRIPT_DIR"/validate-template.d/*.sh; do
+  [[ -e "$check" ]] || continue
+  # shellcheck source=/dev/null
+  source "$check"
+done
+
 echo "Template validation passed: 3 overlays, 7 services, migration, and scrub checks."

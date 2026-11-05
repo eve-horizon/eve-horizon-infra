@@ -103,9 +103,11 @@ module "gke" {
 module "dns" {
   source = "./modules/dns"
 
-  domain        = var.domain
-  dns_zone_name = var.dns_zone_name
-  public_ip     = module.gke.ingress_ip
+  domain                  = var.domain
+  dns_zone_name           = var.dns_zone_name
+  public_ip               = module.gke.ingress_ip
+  platform_hosts          = var.dns_platform_hosts
+  legacy_wildcard_records = var.dns_legacy_wildcard_records
 }
 
 # -----------------------------------------------------------------------------

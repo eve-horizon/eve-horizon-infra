@@ -198,6 +198,18 @@ variable "dns_zone_name" {
   type        = string
 }
 
+variable "dns_platform_hosts" {
+  description = "Host labels under the domain that get A records (api.<domain>, ...). Apps use *.apps.<domain>."
+  type        = list(string)
+  default     = ["api", "registry", "auth", "sso", "dashboard", "ingress"]
+}
+
+variable "dns_legacy_wildcard_records" {
+  description = "Keep the old apex and *.<domain> records during migration. Leave false: they let custom domains claim platform hosts."
+  type        = bool
+  default     = false
+}
+
 # -----------------------------------------------------------------------------
 # Database
 # -----------------------------------------------------------------------------

@@ -27,8 +27,8 @@ output "cloud_sql_private_ip" {
 }
 
 output "api_url" {
-  description = "Eve Horizon API URL"
-  value       = "https://${var.domain}"
+  description = "Eve Horizon API URL (api.<domain>, the api_host convention in config/platform.yaml)"
+  value       = "https://api.${var.domain}"
 }
 
 output "ssh_command" {
@@ -73,13 +73,13 @@ output "next_steps" {
        ./scripts/setup.sh
 
     4. Configure Eve CLI:
-       export EVE_API_URL=https://${var.domain}
+       export EVE_API_URL=https://api.${var.domain}
        eve system health
 
     5. Deploy platform:
        ./bin/eve-infra deploy
 
-    DNS: ${var.domain} -> ${module.gke.ingress_ip}
+    DNS: ${join(", ", module.dns.platform_fqdns)}, *.apps.${var.domain} -> ${module.gke.ingress_ip}
     Database: ${module.sql.private_ip}
   EOT
 }

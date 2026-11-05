@@ -36,6 +36,9 @@ compute_disk_size_gb = 50
 # --- Domain ---
 domain        = "eve.example.com"
 dns_zone_name = "example-com"           # Cloud DNS managed zone name
+# A records: api, registry, auth, sso, dashboard, ingress under the domain,
+# plus *.apps.<domain> for apps (EVE_DEFAULT_DOMAIN = apps.<domain>).
+# dns_platform_hosts = ["api", "registry", "auth", "sso", "dashboard", "ingress"]
 
 # --- Database ---
 db_password = "CHANGE_ME"
