@@ -1,6 +1,12 @@
 # Uncomment and configure for remote state storage.
 # Create the bucket first: gsutil mb gs://YOUR_BUCKET_NAME
 #
+# State holds the database password, and anyone who can write it can make the
+# next apply act with the operator's credentials. Put the bucket in a separate
+# admin project, not the instance project, and never name it
+# <name_prefix>-eve-*: Eve's storage service account can reach every bucket
+# with that prefix.
+#
 # terraform {
 #   backend "gcs" {
 #     bucket = "eve-horizon-tfstate"

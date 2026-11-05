@@ -56,6 +56,16 @@ output "storage_org_bucket_prefix" {
   value       = module.storage.org_bucket_prefix
 }
 
+output "storage_app_bucket_prefix" {
+  description = "GCS bucket prefix for per-app storage (EVE_STORAGE_APP_BUCKET_PREFIX on the worker)"
+  value       = module.storage.app_bucket_prefix
+}
+
+output "storage_agent_runtime_service_account_email" {
+  description = "Agent runtime service account email (Workload Identity annotation for eve-agent-runtime)"
+  value       = module.storage.agent_runtime_service_account_email
+}
+
 output "next_steps" {
   description = "Helpful next steps after deployment"
   value       = <<-EOT
