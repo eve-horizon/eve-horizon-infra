@@ -7,6 +7,46 @@ Each entry includes **Sync impact** to guide what downstream agents need to do.
 
 ---
 
+## [2026-11-05]
+
+### fix: isolate runner pods and guard the worker's cluster rights
+
+Runner pods execute job code but ran as `eve-worker`, whose token can read
+every Secret in the cluster and create pods anywhere. They now run as a new
+`eve-runner` account with no RBAC, no cloud identity and no mounted token. The
+worker's RBAC drops rights its code never uses, and on GKE two admission
+policies stop Eve's controller identities from creating privileged or
+host-level pods, non-ClusterIP Services, or anything in system namespaces.
+
+- **Scope:** `k8s/base/runner-serviceaccount.yaml` (new),
+  `k8s/base/kustomization.yaml`, `k8s/base/worker-deployment.yaml`,
+  `k8s/base/worker-rbac.yaml`, `k8s/overlays/aws/worker-deployment-patch.yaml`,
+  `k8s/overlays/gcp/admission-policies.yaml` (new),
+  `k8s/overlays/gcp/kustomization.yaml`, `scripts/validate-template.sh`,
+  `scripts/validate-template.d/` (new)
+- **Sync impact:**
+  - `k8s/base/` — auto-sync safe for the platform. `EVE_RUNNER_SERVICE_ACCOUNT`
+    moves to `eve-runner`; runner pods reach only the Eve API and never used
+    their token. The worker loses `watch` (all resources), `list` on Secrets,
+    `pods/exec`, `pods/status`, and DaemonSets, StatefulSets, ReplicaSets and
+    CronJobs; no worker code path uses them. **Action required** only if your
+    own pipeline scripts call `kubectl` with the worker's token (in-process
+    script steps): those calls lose these rights, by design.
+  - `k8s/overlays/aws/worker-deployment-patch.yaml` — manual merge (this patch
+    replaces the whole env list; set `EVE_RUNNER_SERVICE_ACCOUNT=eve-runner`).
+  - `k8s/overlays/gcp/` — manual merge. Needs Kubernetes 1.30 or later
+    (`admissionregistration.k8s.io/v1`; GKE REGULAR channel). The guards match
+    only `eve-worker`, `eve-orchestrator`, `eve-agent-runtime` and
+    `eve-runner`; operator and CI applies are unaffected. They refuse stable
+    egress (hostNetwork) and TCP ingress (LoadBalancer) workloads, which the
+    GKE overlay leaves off (`EVE_COMPUTE_MODEL=gke`, no
+    `EVE_TCP_INGRESS_PROVIDER`); add any extra system namespaces of yours to
+    the scope guard's list. Not added to `aws` or `aws-eks`: their supported
+    stable-egress and NLB TCP-ingress features need hostNetwork pods and
+    LoadBalancer Services, and the k3s install is not pinned to 1.30+.
+  - `scripts/` — template CI assertions (runner account, worker env and RBAC
+    in every overlay; GKE admission policies fail closed and deny).
+
 ## [2026-08-25]
 
 ### fix: preserve migration safety and complete auth bootstrap overlays

@@ -40,7 +40,7 @@ spec:
             - name: EVE_TOOLCHAIN_IMAGE_TAG
               value: "latest"
             - name: EVE_RUNNER_SERVICE_ACCOUNT
-              value: eve-worker
+              value: eve-runner
             - name: EVE_API_URL
               value: http://eve-api:4701
             - name: EVE_PUBLIC_API_URL

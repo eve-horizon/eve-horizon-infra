@@ -39,8 +39,10 @@ spec:
             # Image used for spawning runner pods in the Kubernetes cluster
             - name: EVE_RUNNER_IMAGE
               value: eve-horizon/worker:local
+            # Runner pods run job code: token-less account, no RBAC
+            # (runner-serviceaccount.yaml). Never point this at eve-worker.
             - name: EVE_RUNNER_SERVICE_ACCOUNT
-              value: eve-worker
+              value: eve-runner
             - name: EVE_API_URL
               value: http://eve-api:4701
             - name: DATABASE_URL
