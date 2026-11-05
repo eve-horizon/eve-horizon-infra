@@ -250,6 +250,44 @@ cluster. The member strings are unchanged.
     `annotate --local` form)
   - `DEPLOYMENT.md`, `README.md` — auto-sync safe
 
+### fix: GCP org filesystem on the Terraform VPC, sized for cost, with a small profile
+
+- **Scope:** `k8s/overlays/gcp/kustomization.yaml`,
+  `k8s/overlays/gcp/org-fs/` (new; `filestore-storageclass.yaml` moved into
+  `org-fs/filestore/`), `scripts/validate-template.sh`, `CLAUDE.md`
+- **Why:** the Filestore StorageClass used `network: default`, which a project
+  built by `terraform/gcp` does not have (it creates `<name_prefix>-vpc`), so
+  provisioning failed on a fresh project. And Filestore bills the share it
+  provisions, not the claim: the 5Gi org filesystem claim became a 1 TiB Basic
+  HDD share (about GBP 146/month in London). The class now uses
+  `INSTANCE_PREFIX-vpc` (fill it like the overlay's other placeholders), the
+  claim asks for 100Gi (the Basic HDD minimum on GKE 1.33+, about GBP 48/month),
+  and the org filesystem is chosen with a Kustomize component:
+  `org-fs/filestore` (default, RWX) or `org-fs/disk` (a 10 GiB `standard-rwo`
+  RWO disk, about GBP 1/month, with every agent runtime replica held on one
+  node by required pod affinity).
+- **Sync impact:**
+  - `k8s/overlays/gcp/` — manual merge (ask tier). Default render changes only
+    the StorageClass `network` and the claim's request (5Gi to 100Gi).
+    - **Action required:** replace `INSTANCE_PREFIX` in
+      `org-fs/filestore/filestore-storageclass.yaml`. StorageClass parameters
+      are immutable: if your live `filestore-rwx` class has another network
+      (`kubectl get storageclass filestore-rwx -o jsonpath='{.parameters.network}'`),
+      keep that value, or `kubectl apply` will refuse the class.
+    - The 100Gi request is an increase, which Kubernetes allows on a bound
+      claim; on an existing 1 TiB share it is below the provisioned size, so
+      nothing is resized.
+    - Selecting `org-fs/disk` on a running instance is **not** an in-place
+      change: the claim's storage class and access mode are immutable. Back up
+      `/org`, scale the agent runtime to 0, delete the claim (this deletes its
+      volume), switch the component, deploy, restore `/org`. Steps are in
+      `org-fs/disk/kustomization.yaml`. Do not use the disk profile with
+      `EVE_SCRIPT_K8S_RUNNER=true`: worker runner pods mount `/org` and have no
+      node selector.
+  - `scripts/validate-template.sh` — auto-sync safe; asserts the default
+    Filestore network and size, and renders the disk profile
+  - `CLAUDE.md` — manual merge; adds the org filesystem cost table
+
 ## [2026-08-25]
 
 ### fix: preserve migration safety and complete auth bootstrap overlays

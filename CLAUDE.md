@@ -103,6 +103,24 @@ Key cost levers:
 - **Database tier:** db-g1-small (~$27/mo) vs db-custom-2-8192 (~$125/mo)
 - **Node pool min counts:** 0 for agents/apps means pay-per-use
 
+### GCP org filesystem
+
+The agent runtime's shared `/org` volume (claim `eve-org-fs-org-default`) can
+cost more than a node. Pick its profile in `k8s/overlays/gcp/kustomization.yaml`
+under `components:`:
+
+| Profile | Storage | Agent runtime placement | Est. cost (London, Nov 2026) |
+|---------|---------|-------------------------|------------------------------|
+| `org-fs/filestore` (default) | Filestore Basic HDD, RWX, 100 GiB | any number of agents nodes | ~GBP 48/mo on GKE 1.33+ (capacity plus small-instance fee); ~GBP 146/mo on older GKE (1 TiB minimum) |
+| `org-fs/disk` (small) | 10 GiB `standard-rwo` disk, RWO | all replicas on one node | ~GBP 1/mo |
+
+Filestore bills the share it provisions, not the claim, and rounds a small
+claim up to the tier minimum. The disk profile is safe only while the agent
+runtime is the one workload mounting `/org`; `org-fs/disk/kustomization.yaml`
+lists the conditions. A claim's storage class is immutable, so switching a
+running instance means backing up `/org` and recreating the claim (steps in
+the same file).
+
 ## Upstream Sync (Template Repo)
 
 This repo is an **infrastructure template**. Downstream users clone it (not fork) to deploy their own Eve Horizon instance. The upstream sync system keeps downstream repos in sync with template improvements.

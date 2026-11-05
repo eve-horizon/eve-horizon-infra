@@ -1,0 +1,25 @@
+# Org filesystem profile "filestore" (the default): a Filestore Basic HDD share
+# (tier "standard"), ReadWriteMany, so agent runtime pods may run on any
+# number of agents nodes.
+#
+# Filestore bills the instance it provisions, not the claim. GKE 1.33 and later
+# accept 100 GiB for Basic HDD, so the claim asks for exactly that; older GKE
+# versions round any request up to the 1 TiB minimum. London list prices
+# (Nov 2026): about GBP 48/month at 100 GiB (capacity plus the small-instance
+# fee), about GBP 146/month at 1 TiB. The "disk" profile costs about GBP 1/month
+# but keeps the agent runtime on one node; see ../disk/kustomization.yaml.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+resources:
+  - filestore-storageclass.yaml
+patches:
+  - target:
+      kind: PersistentVolumeClaim
+      name: eve-org-fs-org-default
+    patch: |
+      - op: add
+        path: /spec/storageClassName
+        value: filestore-rwx
+      - op: replace
+        path: /spec/resources/requests/storage
+        value: 100Gi
