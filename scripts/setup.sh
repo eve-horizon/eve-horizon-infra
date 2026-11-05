@@ -39,6 +39,12 @@ COMPUTE_MODEL="${COMPUTE_MODEL:-k3s}"
 NAME_PREFIX="$(sed -n 's/^name_prefix: *//p' "$CONFIG_FILE" | head -1 | sed 's/[[:space:]]*#.*$//' | tr -d '"' | tr -d "'" | xargs)"
 NAME_PREFIX="${NAME_PREFIX:-eve}"
 
+# ingress-nginx Helm chart. Keep it equal to INGRESS_NGINX_CHART_VERSION in
+# .github/workflows/deploy.yml, which reconciles aws-eks clusters to that chart
+# on every deploy. ingress-nginx is retired upstream (no releases after March
+# 2026); see "Ingress controller" in DEPLOYMENT.md before changing it.
+INGRESS_NGINX_CHART_VERSION="${INGRESS_NGINX_CHART_VERSION:-4.14.3}"
+
 # Colors
 if [[ -t 1 ]]; then
   BOLD='\033[1m' GREEN='\033[0;32m' CYAN='\033[0;36m' YELLOW='\033[0;33m' RED='\033[0;31m' RESET='\033[0m'
@@ -114,7 +120,7 @@ ok "Namespace '${NAMESPACE}' exists."
 # 2. Install nginx-ingress when required by overlay
 # -------------------------------------------------------------------------
 if [ "$CLOUD" = "gcp" ] || [ "$OVERLAY" = "aws-eks" ]; then
-  info "Installing nginx-ingress controller..."
+  info "Installing nginx-ingress controller (chart ${INGRESS_NGINX_CHART_VERSION})..."
   if kubectl get namespace ingress-nginx &>/dev/null; then
     ok "ingress-nginx namespace already exists, skipping install."
   else
@@ -131,11 +137,13 @@ if [ "$CLOUD" = "gcp" ] || [ "$OVERLAY" = "aws-eks" ]; then
       INGRESS_IP="$(terraform -chdir="$REPO_ROOT/terraform/gcp" output -raw ingress_ip 2>/dev/null || true)"
       helm install ingress-nginx ingress-nginx/ingress-nginx \
         --namespace ingress-nginx --create-namespace \
+        --version "$INGRESS_NGINX_CHART_VERSION" \
         ${INGRESS_IP:+--set controller.service.loadBalancerIP="$INGRESS_IP"} \
         --wait
     else
       helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
         --namespace ingress-nginx --create-namespace \
+        --version "$INGRESS_NGINX_CHART_VERSION" \
         --set controller.service.type=LoadBalancer \
         --set controller.service.annotations."service\.beta\.kubernetes\.io/aws-load-balancer-type"=nlb \
         --set controller.service.annotations."service\.beta\.kubernetes\.io/aws-load-balancer-scheme"=internet-facing \

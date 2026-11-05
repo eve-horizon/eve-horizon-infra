@@ -423,6 +423,29 @@ cluster. The member strings are unchanged.
   - `DEPLOYMENT.md` — informational
   - `scripts/validate-template.sh`, `tests/` — template-only CI
 
+### fix: pin the ingress-nginx chart that setup installs
+
+- **Scope:** `scripts/setup.sh`, `.github/workflows/deploy.yml` (comment only),
+  `DEPLOYMENT.md`, `scripts/validate-template.sh`
+- **Why:** `setup.sh` installed ingress-nginx on GKE and AWS EKS from whatever
+  chart was newest at the time, while the deploy workflow pins aws-eks
+  clusters to chart 4.14.3, so two installs a week apart could differ and an
+  EKS cluster could flip versions on its first CI deploy.
+- **What changed:** both setup paths pass `--version
+  "$INGRESS_NGINX_CHART_VERSION"`, default `4.14.3` (the deploy workflow's
+  pin), overridable per run. `DEPLOYMENT.md` records that ingress-nginx is
+  retired upstream (no releases after March 2026; final charts 4.14.5 and
+  4.15.1) and that the planned successor is the Gateway API. Template CI
+  fails if an ingress-nginx Helm command lacks `--version` or the two pins
+  differ.
+- **Sync impact:**
+  - `scripts/setup.sh` — auto-sync safe (affects only new ingress-nginx
+    installs; setup skips an existing `ingress-nginx` namespace)
+  - `.github/workflows/deploy.yml` — auto-sync safe (comment only; the pin is
+    unchanged)
+  - `DEPLOYMENT.md` — informational
+  - `scripts/validate-template.sh` — template-only CI assertion
+
 ## [2026-08-25]
 
 ### fix: preserve migration safety and complete auth bootstrap overlays

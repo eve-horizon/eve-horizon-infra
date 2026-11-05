@@ -198,6 +198,7 @@ jobs:
           NAME_PREFIX: ${{ steps.config.outputs.name_prefix }}
           PROJECT_NAME: eve-horizon
           COST_SCOPE: eve-horizon
+          # Keep equal to the default in scripts/setup.sh (template CI checks).
           INGRESS_NGINX_CHART_VERSION: 4.14.3
         run: |
           set -euo pipefail
