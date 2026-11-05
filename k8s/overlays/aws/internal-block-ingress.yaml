@@ -79,6 +79,12 @@ metadata:
     app.kubernetes.io/name: eve-dashboard-internal
 spec:
   ingressClassName: nginx
+  # Same certificate as eve-dashboard (issued there); without TLS here the
+  # block would only match plain-HTTP requests.
+  tls:
+    - hosts:
+        - dashboard.eve.example.com
+      secretName: eve-dashboard-tls
   rules:
     - host: dashboard.eve.example.com
       http:

@@ -7,8 +7,15 @@ kind: Ingress
 metadata:
   name: eve-dashboard
   namespace: eve
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
 spec:
   ingressClassName: nginx
+  tls:
+    - hosts:
+        - dashboard.eve.example.com
+      secretName: eve-dashboard-tls
   rules:
     - host: dashboard.eve.example.com
       http:
