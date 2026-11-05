@@ -40,8 +40,9 @@ registry's token realm, on the API host.
   outside the platform DNS; on k3s it went to the default controller
   (Traefik). New `dashboard-ingress-patch.yaml` files give it the API's
   class (`nginx`) and the host `dashboard.<domain>`, so the dashboard is now
-  served next to the API, and GKE removes the extra load balancer. No TLS is
-  added; add it as for the API if you serve the dashboard publicly.
+  served next to the API, and GKE removes the extra load balancer. On aws
+  the dashboard and its block also get TLS (`eve-dashboard-tls`, issued by
+  `letsencrypt-prod` on `eve-dashboard`), like the API; it had none before.
 - **Sync impact:**
   - `k8s/overlays/` — manual merge. Copy your `eve-api` and `eve-dashboard`
     Ingress host, class and TLS into the two new Ingresses (template CI
