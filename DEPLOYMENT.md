@@ -85,8 +85,8 @@ openssl rand -hex 32    # -> EVE_INTERNAL_API_KEY
 # Bootstrap token (for initial admin setup)
 openssl rand -hex 32    # -> EVE_BOOTSTRAP_TOKEN
 
-# Database password (also used in terraform.tfvars)
-openssl rand -base64 24 # -> used in DATABASE_URL
+# Database password (also used in terraform.tfvars); URL-safe for DATABASE_URL
+openssl rand -base64 24 | tr -d '/+=' # -> db_password and DATABASE_URL
 ```
 
 Set at minimum:
@@ -131,9 +131,14 @@ terraform -chdir="terraform/${CLOUD}" apply    # Type "yes" to confirm
 
 # Save the outputs -- you'll need them
 terraform -chdir="terraform/${CLOUD}" output
-terraform -chdir="terraform/${CLOUD}" output -raw database_url   # -> paste into secrets.env as DATABASE_URL
+terraform -chdir="terraform/${CLOUD}" output -raw database_host  # -> host part of DATABASE_URL
 terraform -chdir="terraform/${CLOUD}" output -raw ssh_command    # -> use to connect to the server
 ```
+
+Build `DATABASE_URL` in `secrets.env` from that host and your `terraform.tfvars`:
+`postgres://<db_username>:<db_password>@<database_host>:5432/<db_name>` (the
+username and database name default to `eve`). Terraform has no output that
+contains the password, so `terraform output -json` never prints it.
 
 Terraform creates cloud networking, managed database, DNS records, and cluster compute for the selected provider.
 
