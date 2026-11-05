@@ -28,6 +28,11 @@ EVE_EFFECTIVE_CONTEXT=""
 # postgres:17.11-alpine, pinned to its multi-arch index digest.
 PSQL_IMAGE="postgres:17.11-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73"
 
+# How long deploy and restart wait for each rollout. The worker can take
+# minutes to boot, so the default is generous; override with
+# EVE_ROLLOUT_TIMEOUT (a kubectl duration such as 900s or 15m).
+ROLLOUT_TIMEOUT="${EVE_ROLLOUT_TIMEOUT:-600s}"
+
 # ---------------------------------------------------------------------------
 # Colors (disabled when stdout is not a terminal)
 # ---------------------------------------------------------------------------
@@ -539,7 +544,13 @@ verify_registry_auth() {
   While DNS or TLS for ${host} is still being set up, re-run with --skip-registry-check."
 }
 
+require_rollout_timeout() {
+  [[ "$ROLLOUT_TIMEOUT" =~ ^[1-9][0-9]*[smh]$ ]] \
+    || die "EVE_ROLLOUT_TIMEOUT must be a duration such as 600s or 15m (got '${ROLLOUT_TIMEOUT}')."
+}
+
 cmd_deploy() {
+  require_rollout_timeout
   require_cluster_access write
 
   local skip_migrate=false skip_registry_check=false
@@ -587,8 +598,8 @@ cmd_deploy() {
   printf '%s\n' "$manifests" | kube apply -f - -n "$NAMESPACE"
 
   echo ""
-  info "Waiting for rollouts..."
-  local resource
+  info "Waiting for rollouts (up to ${ROLLOUT_TIMEOUT} each)..."
+  local resource failed=()
   for resource in \
     deployment/eve-api \
     deployment/eve-worker \
@@ -597,18 +608,27 @@ cmd_deploy() {
     deployment/eve-dashboard \
     statefulset/eve-agent-runtime; do
     echo -n "  ${resource}... "
-    if kube rollout status "$resource" -n "$NAMESPACE" --timeout=120s 2>/dev/null; then
+    if kube rollout status "$resource" -n "$NAMESPACE" --timeout="$ROLLOUT_TIMEOUT" 2>/dev/null; then
       echo -e "${GREEN}ready${RESET}"
     else
-      echo -e "${RED}timed out${RESET}"
+      echo -e "${RED}not ready after ${ROLLOUT_TIMEOUT}${RESET}"
+      failed+=("$resource")
     fi
   done
 
   echo ""
+  # The registry auth check runs even when a rollout is slow: an open registry
+  # is worth knowing about at once. Unfinished rollouts then fail the deploy.
   if [[ "$skip_registry_check" == "true" ]]; then
     warn "Skipping the registry auth check (--skip-registry-check)."
   else
     verify_registry_auth "$overlay_dir"
+  fi
+
+  if [[ ${#failed[@]} -gt 0 ]]; then
+    die "Rollout did not finish for: ${failed[*]}
+  Check with: eve-infra status; eve-infra logs <service>
+  A slow first boot may need more time: EVE_ROLLOUT_TIMEOUT=15m eve-infra deploy"
   fi
 
   echo ""
@@ -885,6 +905,7 @@ cmd_restart() {
   [[ -n "$service" ]] || die "Usage: eve-infra restart <service>
   Services: $VALID_SERVICES"
 
+  require_rollout_timeout
   require_cluster_access write
 
   local resource
@@ -894,10 +915,10 @@ cmd_restart() {
   kube rollout restart "$resource" -n "$NAMESPACE"
 
   echo -n "  Waiting for rollout... "
-  if kube rollout status "$resource" -n "$NAMESPACE" --timeout=120s 2>/dev/null; then
+  if kube rollout status "$resource" -n "$NAMESPACE" --timeout="$ROLLOUT_TIMEOUT" 2>/dev/null; then
     echo -e "${GREEN}ready${RESET}"
   else
-    echo -e "${RED}timed out${RESET}"
+    echo -e "${RED}not ready after ${ROLLOUT_TIMEOUT}${RESET}"
     exit 1
   fi
 
@@ -986,6 +1007,7 @@ Environment:
                       Emergency override to bypass context safety checks
   EVE_ALLOW_PLACEHOLDERS=1
                       Deploy even if the overlay still has template placeholders
+  EVE_ROLLOUT_TIMEOUT How long deploy and restart wait for each rollout (default 600s)
   Config file:        config/platform.yaml (relative to repo root)
   Secrets file:       config/secrets.env (not committed; see secrets.env.example)
 

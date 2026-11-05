@@ -35,6 +35,9 @@ permissions:
 
 env:
   NAMESPACE: eve
+  # How long each rollout may take. The worker can need minutes to boot; set
+  # the repository variable EVE_ROLLOUT_TIMEOUT (e.g. 15m) to change it.
+  ROLLOUT_TIMEOUT: ${{ vars.EVE_ROLLOUT_TIMEOUT || '600s' }}
 
 jobs:
   deploy:
@@ -484,25 +487,25 @@ jobs:
       # Wait for rollouts
       # -----------------------------------------------------------------------
       - name: Wait for API rollout
-        run: kubectl -n $NAMESPACE rollout status deployment/eve-api --timeout=180s
+        run: kubectl -n $NAMESPACE rollout status deployment/eve-api --timeout="$ROLLOUT_TIMEOUT"
 
       - name: Wait for Orchestrator rollout
-        run: kubectl -n $NAMESPACE rollout status deployment/eve-orchestrator --timeout=180s
+        run: kubectl -n $NAMESPACE rollout status deployment/eve-orchestrator --timeout="$ROLLOUT_TIMEOUT"
 
       - name: Wait for Worker rollout
-        run: kubectl -n $NAMESPACE rollout status deployment/eve-worker --timeout=180s
+        run: kubectl -n $NAMESPACE rollout status deployment/eve-worker --timeout="$ROLLOUT_TIMEOUT"
 
       - name: Wait for Gateway rollout
-        run: kubectl -n $NAMESPACE rollout status deployment/eve-gateway --timeout=180s
+        run: kubectl -n $NAMESPACE rollout status deployment/eve-gateway --timeout="$ROLLOUT_TIMEOUT"
 
       - name: Wait for SSO rollout
-        run: kubectl -n $NAMESPACE rollout status deployment/eve-sso --timeout=180s
+        run: kubectl -n $NAMESPACE rollout status deployment/eve-sso --timeout="$ROLLOUT_TIMEOUT"
 
       - name: Wait for Dashboard rollout
-        run: kubectl -n $NAMESPACE rollout status deployment/eve-dashboard --timeout=180s
+        run: kubectl -n $NAMESPACE rollout status deployment/eve-dashboard --timeout="$ROLLOUT_TIMEOUT"
 
       - name: Wait for Agent Runtime rollout
-        run: kubectl -n $NAMESPACE rollout status statefulset/eve-agent-runtime --timeout=180s
+        run: kubectl -n $NAMESPACE rollout status statefulset/eve-agent-runtime --timeout="$ROLLOUT_TIMEOUT"
 
       # -----------------------------------------------------------------------
       # Health check

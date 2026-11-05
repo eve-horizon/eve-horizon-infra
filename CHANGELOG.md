@@ -496,6 +496,36 @@ cluster. The member strings are unchanged.
   - `README.md` — informational
   - `scripts/validate-template.sh`, `tests/` — template-only CI
 
+### fix: let slow-booting workers start, and wait for them on deploy
+
+- **Scope:** `k8s/base/worker-deployment.yaml`,
+  `k8s/base/agent-runtime-deployment.yaml`, `bin/eve-infra`,
+  `.github/workflows/deploy.yml`, `DEPLOYMENT.md`,
+  `scripts/validate-template.sh`, `tests/test_rollout_timeout.py` (new)
+- **Why:** the worker can spend about three minutes setting up harness CLI
+  tooling before it serves `/health`. `eve-infra deploy` waited 120s per
+  rollout (the workflow 180s), and the liveness probe (20s delay, 3 failures)
+  left little margin before restarting a booting worker.
+- **What changed:** the worker and agent runtime get a `startupProbe` on
+  `/health` that allows up to 10 minutes, holding off liveness and readiness
+  until the first success (a fast boot is unaffected). `deploy` and
+  `restart` wait `EVE_ROLLOUT_TIMEOUT` per rollout (default `600s`); the deploy
+  workflow uses the repository variable `EVE_ROLLOUT_TIMEOUT` with the same
+  default. `deploy` now exits non-zero, after checking every workload, when a
+  rollout has not finished, instead of printing "timed out" and "Deploy
+  complete". Template CI checks each render's startup budget and the
+  timeout handling.
+- **Sync impact:**
+  - `k8s/base/` — auto-sync safe (adds probes; rolls the worker and agent
+    runtime on the next deploy)
+  - `bin/eve-infra` — auto-sync safe, but scripts that ran `eve-infra deploy`
+    and ignored its result now see exit status 1 when a rollout does not
+    finish
+  - `.github/workflows/deploy.yml` — auto-sync safe (rollout waits go from
+    180s to 600s unless `EVE_ROLLOUT_TIMEOUT` is set)
+  - `DEPLOYMENT.md` — informational
+  - `scripts/validate-template.sh`, `tests/` — template-only CI
+
 ## [2026-08-25]
 
 ### fix: preserve migration safety and complete auth bootstrap overlays

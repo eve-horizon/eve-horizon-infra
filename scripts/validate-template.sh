@@ -268,6 +268,27 @@ for overlay in "${OVERLAYS[@]}"; do
   ((gc_reserved < gc_max && gc_free + gc_max < cache_mb)) \
     || fail "$overlay: buildkitd GC ($gc MB) does not fit its $cache_size cache volume"
 
+  # The worker and agent runtime can take minutes to boot: a startupProbe must
+  # hold off liveness for at least 5 minutes.
+  for workload in eve-worker eve-agent-runtime; do
+    startup_budget="$(awk -v target="$workload" '
+      function flush() {
+        if (name == target && (kind == "Deployment" || kind == "StatefulSet")) print period * threshold
+        kind = name = ""; period = threshold = 0; depth = -1
+      }
+      BEGIN { depth = -1 }
+      /^---$/ { flush(); next }
+      /^kind: / { kind = $2 }
+      /^  name: / { name = $2 }
+      match($0, /^ *startupProbe:$/) { depth = RLENGTH - length("startupProbe:"); next }
+      depth >= 0 && match($0, /^ */) && RLENGTH <= depth { depth = -1 }
+      depth >= 0 && $1 == "periodSeconds:" { period = $2 }
+      depth >= 0 && $1 == "failureThreshold:" { threshold = $2 }
+      END { flush() }' "$rendered")"
+    [[ "${startup_budget:-0}" -ge 300 ]] \
+      || fail "$overlay: $workload needs a startupProbe allowing at least 300s (got ${startup_budget:-none})"
+  done
+
   upgrade_root="$work_root/upgrade-$overlay"
   mkdir -p "$upgrade_root"
   cp -R "$REPO_ROOT/bin" "$REPO_ROOT/config" "$REPO_ROOT/k8s" "$upgrade_root/"

@@ -59,6 +59,15 @@ spec:
           volumeMounts:
             - name: org-fs
               mountPath: /org
+          # Boot can take minutes (harness CLI setup before the server
+          # listens). Liveness and readiness wait until this passes, so a
+          # slow start is not killed; it allows up to 10 minutes.
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            failureThreshold: 120
           readinessProbe:
             httpGet:
               path: /health
