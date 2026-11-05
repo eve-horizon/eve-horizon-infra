@@ -41,6 +41,7 @@ dns_zone_name = "example-com"           # Cloud DNS managed zone name
 db_password = "CHANGE_ME"
 # database_instance_class = "db-f1-micro"      # Dev/staging
 # database_instance_class = "db-custom-2-8192" # Production (2 vCPU, 8 GB)
+# deletion_protection     = true              # Production: blocks deletion in Terraform and in Cloud SQL itself
 
 # --- Ollama GPU (optional) ---
 # ollama_enabled              = true

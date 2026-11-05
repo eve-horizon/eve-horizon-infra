@@ -44,6 +44,25 @@ Each entry includes **Sync impact** to guide what downstream agents need to do.
   - `scripts/validate-template.sh` — auto-sync safe; fails on any `.tf` line
     that guards a function call with `&&` or `||` on a null check
 
+### fix: turn on Cloud SQL's own deletion protection
+
+- **Scope:** `terraform/gcp/modules/sql/`, `terraform/gcp/variables.tf`,
+  `terraform/gcp/terraform.tfvars.example`, `scripts/validate-template.sh`
+- **Why:** `deletion_protection` only set the Terraform-side guard, so Cloud SQL
+  reported `settings.deletionProtectionEnabled: false` and the console, gcloud
+  or API could still delete the instance. The module now also sets
+  `settings.deletion_protection_enabled` from the same variable.
+- **Sync impact:**
+  - `terraform/gcp/modules/sql/` — auto-sync safe. With
+    `deletion_protection = true` the next apply makes one **in-place** update
+    to the Cloud SQL instance (no replacement); with `false` (the default)
+    the plan is unchanged. To delete a protected instance, set
+    `deletion_protection = false` and apply first, as before.
+  - `terraform/gcp/variables.tf`, `terraform/gcp/terraform.tfvars.example` —
+    manual merge; description and example only
+  - `scripts/validate-template.sh` — auto-sync safe; asserts the module keeps
+    both guards tied to the variable
+
 ## [2026-08-25]
 
 ### fix: preserve migration safety and complete auth bootstrap overlays

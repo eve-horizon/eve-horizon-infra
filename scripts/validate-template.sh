@@ -50,6 +50,12 @@ fi
 work_root="$(mktemp -d)"
 trap 'rm -rf "$work_root"' EXIT
 
+# Cloud SQL's own deletion protection must follow the Terraform guard, or the
+# instance can still be deleted from the console, gcloud or the API.
+grep -Eq '^[[:space:]]*deletion_protection_enabled[[:space:]]*=[[:space:]]*var\.deletion_protection$' \
+  "$REPO_ROOT/terraform/gcp/modules/sql/main.tf" \
+  || fail "Cloud SQL settings do not set deletion_protection_enabled from var.deletion_protection"
+
 for overlay in "${OVERLAYS[@]}"; do
   [[ -f "$REPO_ROOT/k8s/overlays/$overlay/db-migrate-job-patch.yaml" ]] \
     || fail "$overlay is missing its deployment migration job"

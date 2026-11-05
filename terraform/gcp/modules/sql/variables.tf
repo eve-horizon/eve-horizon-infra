@@ -30,6 +30,6 @@ variable "tier" {
 }
 
 variable "deletion_protection" {
-  description = "Enable deletion protection"
+  description = "Refuse deletion in Terraform and in Cloud SQL itself (console, gcloud, API)"
   type        = bool
 }
