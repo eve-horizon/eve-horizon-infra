@@ -4,6 +4,7 @@ resources:
   - admission-policies.yaml
   - network-policies.yaml
   - ingress-host-policy.yaml
+  - internal-block-ingress.yaml
   - ../../base
   - storage-workload-identity.yaml
   - registry-pvc.yaml

@@ -1,0 +1,133 @@
+# Keep the API's /internal/* routes off the internet.
+#
+# /internal/* on eve-api is for in-cluster callers, which use
+# http://eve-api:4701 and never pass through the ingress. Publicly only the
+# registry token endpoint is needed: Docker clients and kubelets follow the
+# registry's token realm, https://<api host>/internal/registry/token. Every
+# other /internal path is routed to a Service that never has endpoints, so
+# the ingress controller answers 503 and a leaked internal key cannot be used
+# from outside the cluster.
+#
+# eve-api-internal shares eve-api's host. On ingress-nginx (and on Traefik,
+# which tries the longest rule first) the Exact token path wins over the
+# /internal Prefix, which wins over eve-api's "/".
+# Keep its host and ingress class in step with the eve-api Ingress.
+#
+# The dashboard proxies /api/* to the API with the /api prefix removed, so
+# https://<dashboard host>/api/internal/... reaches the same routes. Its
+# Express mount matches /api case-insensitively and the ingress does not, so
+# eve-dashboard-internal blocks every letter-case spelling of /api/internal.
+# Keep its host, ingress class and TLS in step with the eve-dashboard Ingress.
+apiVersion: v1
+kind: Service
+metadata:
+  name: eve-api-internal-block
+  namespace: eve
+  labels:
+    app.kubernetes.io/name: eve-api-internal-block
+spec:
+  # Selects nothing: no pod carries this label.
+  selector:
+    app.kubernetes.io/name: eve-api-internal-block-no-endpoints
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: eve-api-internal
+  namespace: eve
+  labels:
+    app.kubernetes.io/name: eve-api-internal
+  annotations:
+    kubernetes.io/ingress.class: nginx
+spec:
+  rules:
+    - host: api.eve.example.com
+      http:
+        paths:
+          - path: /internal/registry/token
+            pathType: Exact
+            backend:
+              service:
+                name: eve-api
+                port:
+                  number: 4701
+          - path: /internal
+            pathType: Prefix
+            backend:
+              service:
+                name: eve-api-internal-block
+                port:
+                  number: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: eve-dashboard-internal
+  namespace: eve
+  labels:
+    app.kubernetes.io/name: eve-dashboard-internal
+spec:
+  rules:
+    - host: dashboard.eve.lvh.me
+      http:
+        paths:
+          - path: /api/internal
+            pathType: Prefix
+            backend:
+              service:
+                name: eve-api-internal-block
+                port:
+                  number: 80
+          - path: /apI/internal
+            pathType: Prefix
+            backend:
+              service:
+                name: eve-api-internal-block
+                port:
+                  number: 80
+          - path: /aPi/internal
+            pathType: Prefix
+            backend:
+              service:
+                name: eve-api-internal-block
+                port:
+                  number: 80
+          - path: /aPI/internal
+            pathType: Prefix
+            backend:
+              service:
+                name: eve-api-internal-block
+                port:
+                  number: 80
+          - path: /Api/internal
+            pathType: Prefix
+            backend:
+              service:
+                name: eve-api-internal-block
+                port:
+                  number: 80
+          - path: /ApI/internal
+            pathType: Prefix
+            backend:
+              service:
+                name: eve-api-internal-block
+                port:
+                  number: 80
+          - path: /APi/internal
+            pathType: Prefix
+            backend:
+              service:
+                name: eve-api-internal-block
+                port:
+                  number: 80
+          - path: /API/internal
+            pathType: Prefix
+            backend:
+              service:
+                name: eve-api-internal-block
+                port:
+                  number: 80

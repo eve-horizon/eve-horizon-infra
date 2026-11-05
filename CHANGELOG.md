@@ -670,6 +670,42 @@ and a GKE admission policy refuses tenant ingresses on platform hosts.
     `EVE_DEFAULT_DOMAIN` and the API host agree; every platform ingress host
     has a record).
 
+### fix: block the API's /internal routes at the public ingress
+
+The API ingress sent every path to `eve-api`, so `/internal/*` (secrets,
+job and registry tokens, chat routing) was reachable from the internet and
+guarded only by the internal key. The dashboard's `/api` proxy exposed the
+same routes on the dashboard host. Every overlay now routes those paths to a
+Service with no endpoints (503), keeping `/internal/registry/token`, the
+registry's token realm, on the API host.
+
+- **Scope:** `k8s/overlays/{aws,aws-eks,gcp}/internal-block-ingress.yaml`
+  (new), `k8s/overlays/{aws,aws-eks,gcp}/kustomization.yaml`,
+  `scripts/validate-template.sh`, `scripts/validate-template.d/` (new)
+- **How it works:** a second Ingress on the API host routes
+  `/internal/registry/token` (Exact) to `eve-api` and the `/internal` prefix
+  to `eve-api-internal-block`, a Service whose selector matches no pod.
+  ingress-nginx (all three overlays) and Traefik both prefer Exact over
+  Prefix and the longer prefix over `/`, so the API's own `/` route is
+  untouched. A third Ingress on the dashboard host blocks `/api/internal`
+  in every letter case: the dashboard's Express mount matches `/api`
+  case-insensitively, while ingress path matching is case-sensitive (the
+  API's Fastify routes are case-sensitive, so `/internal` needs no variants).
+  No new Pods, and no cert-manager annotation (the API host reuses
+  `eve-api-tls` where the overlay has one).
+- **Sync impact:**
+  - `k8s/overlays/` — manual merge. Copy your `eve-api` and `eve-dashboard`
+    Ingress host, class and TLS into the two new Ingresses (template CI
+    checks they match). If you replaced ingress-nginx with another
+    controller, keep the same class on all three. In-cluster callers use
+    `http://eve-api:4701` and are unaffected; anything outside the cluster
+    that calls `/internal/*` other than the registry token endpoint through
+    the public host now gets 503. The Eve platform has no such caller.
+  - `scripts/` — template CI assertions (block Ingresses on the API and
+    dashboard hosts in every overlay, same host, class and TLS; the token
+    path is the only kept path and matches the registry realm; the block
+    Service selects no workload).
+
 ## [2026-08-25]
 
 ### fix: preserve migration safety and complete auth bootstrap overlays
