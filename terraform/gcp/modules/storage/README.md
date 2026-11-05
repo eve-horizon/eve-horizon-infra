@@ -51,6 +51,15 @@ Neither account can read other buckets in the project, such as backups or
 Terraform state, and neither can grant anyone access to Eve's org or internal
 buckets.
 
+**Residual risk: app bucket IAM.** The platform account can set IAM on every
+`<name_prefix>-eve-app-*` bucket, because publishing a `visibility: public`
+app bucket needs it. Job code that runs in the worker pod (in-process pipeline
+scripts) can use that account too, so it can grant anyone, including
+`allUsers` or an account outside the project, lasting access to any project's
+app bucket; the grant outlives the job. This remains until job code no longer
+runs in the worker pod (runner-pod scripts) or publishing moves to an
+identity that job code cannot reach.
+
 ## Keep Terraform state out of the instance project
 
 The state holds the database password, and anyone who can write it can make

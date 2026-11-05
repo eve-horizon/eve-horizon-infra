@@ -44,7 +44,8 @@ resource "google_service_account" "storage" {
 # can use this identity, so it gets the storage permissions of
 # roles/storage.admin without the setIamPolicy ones, and only on Eve's own
 # buckets. Other buckets in the project, such as backups or Terraform state,
-# are out of reach, and no one can be granted lasting access to Eve's buckets.
+# are out of reach, and this role cannot grant anyone access to Eve's org or
+# internal buckets. App buckets are the exception: see app_bucket_publisher.
 data "google_iam_role" "storage_admin" {
   name = "roles/storage.admin"
 }
@@ -105,6 +106,12 @@ resource "google_project_iam_member" "bucket_creator" {
 # so setIamPolicy is limited to the app-bucket prefix. The worker must set
 # EVE_STORAGE_APP_BUCKET_PREFIX to app_bucket_prefix; without it app buckets
 # are named after the org prefix and this grant does not match them.
+#
+# Residual risk: job code in the worker pod (in-process pipeline scripts) can
+# use this identity too, so it can grant anyone, including allUsers or an
+# outside account, lasting access to any project's app bucket, and the grant
+# outlives the job. This stays until job code no longer runs in the worker
+# pod, or publishing moves to an identity that job code cannot reach.
 resource "google_project_iam_custom_role" "app_bucket_publisher" {
   project     = var.project_id
   role_id     = "${local.role_id_prefix}_eveAppBucketPublisher"
