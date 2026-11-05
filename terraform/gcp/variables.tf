@@ -83,6 +83,12 @@ variable "allowed_api_cidrs" {
   default     = ["0.0.0.0/0"]
 }
 
+variable "allow_service_external_ips" {
+  description = "Allow Kubernetes Services to set spec.externalIPs (CVE-2020-8554). Leave false unless you rely on it."
+  type        = bool
+  default     = false
+}
+
 variable "enable_dataplane_v2" {
   description = "Create the GKE cluster with Dataplane V2, which enforces the overlay NetworkPolicies. Creation-time only: an existing cluster is never replaced to change it (check the network_policy_enforced output)."
   type        = bool
