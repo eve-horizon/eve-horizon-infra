@@ -555,6 +555,19 @@ cmd_deploy() {
 
   [[ -d "$overlay_dir" ]] || die "Overlay directory not found: $overlay_dir"
 
+  # Render once, before anything touches the cluster: an overlay that still
+  # carries template placeholders fails here, ahead of migrations, and the
+  # apply below uses exactly the manifests that were checked.
+  info "Building manifests with kustomize (overlay: ${overlay})..."
+  local manifests
+  if command -v kustomize &>/dev/null; then
+    manifests="$(kustomize build "$overlay_dir")"
+  else
+    manifests="$(kubectl kustomize "$overlay_dir")"
+  fi
+  printf '%s\n' "$manifests" | "$REPO_ROOT/scripts/check-placeholders.sh" \
+    || die "Refusing to deploy overlay '${overlay}' while it carries template placeholders."
+
   # Migrations run before rollout so new pods come up against the new schema.
   # Use --skip-migrate only when a migration needs deliberate hand-staging.
   if [[ "$skip_migrate" == "true" ]]; then
@@ -566,12 +579,8 @@ cmd_deploy() {
     echo ""
   fi
 
-  info "Building manifests with kustomize (overlay: ${overlay})..."
-  if command -v kustomize &>/dev/null; then
-    kustomize build "$overlay_dir" | kube apply -f - -n "$NAMESPACE"
-  else
-    kube apply -k "$overlay_dir" -n "$NAMESPACE"
-  fi
+  info "Applying manifests (overlay: ${overlay})..."
+  printf '%s\n' "$manifests" | kube apply -f - -n "$NAMESPACE"
 
   echo ""
   info "Waiting for rollouts..."
@@ -925,7 +934,8 @@ Platform:
   kubeconfig doctor   Validate config/kubeconfig.yaml and cluster connectivity
   kubeconfig refresh  Regenerate config/kubeconfig.yaml (aws/eks)
   upgrade <version>   Update platform.yaml, patch overlays for new version
-  deploy              Run pending migrations + apply current config (use --skip-migrate to deploy without migrating)
+  deploy              Run pending migrations + apply current config (use --skip-migrate to deploy without migrating;
+                      refuses an overlay that still has template placeholders)
                       Then checks the Eve-native registry demands a bearer token
                       (--skip-registry-check only while its DNS/TLS is being set up)
   health              Run health check against the API endpoint
@@ -952,6 +962,8 @@ Environment:
   KUBECONFIG          Ignored if set to a different path (safety hardening)
   EVE_KUBE_GUARD_BYPASS=1
                       Emergency override to bypass context safety checks
+  EVE_ALLOW_PLACEHOLDERS=1
+                      Deploy even if the overlay still has template placeholders
   Config file:        config/platform.yaml (relative to repo root)
   Secrets file:       config/secrets.env (not committed; see secrets.env.example)
 

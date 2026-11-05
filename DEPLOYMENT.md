@@ -198,6 +198,18 @@ bin/eve-infra health
 
 The deploy command builds manifests from `k8s/overlays/<overlay>/` (`overlay` from `config/platform.yaml`, falling back to `cloud`) and applies them to the cluster, then waits for rollouts to complete.
 
+The overlays ship with placeholder values that you replace with this
+instance's values before the first deploy: `INSTANCE_PREFIX` (your
+`name_prefix`), `GCP_PROJECT`, `YOUR_REGION`, `REPLACE_*`, and `example.com`
+hosts (your `api_host`, `app_domain`, and the auth, SSO and registry hosts).
+Deploy (and the deploy workflow) renders the overlay first and refuses to
+continue while any of these remain, listing each one with the resources that
+carry it. Check before deploying with:
+
+```bash
+kubectl kustomize k8s/overlays/<overlay> | scripts/check-placeholders.sh
+```
+
 On overlays that run the Eve-native registry for app images (`gcp`, `aws-eks`), deploy then checks that `https://<registry host>/v2/` answers `401` with a `WWW-Authenticate: Bearer realm=` challenge, and fails if it does not: a registry that misses its token-auth config would let anyone push and pull. The host comes from the overlay's `eve-registry` ingress. Keep it, the `realm` in the overlay's `registry-configmap-patch.yaml` (`https://<api_host>/internal/registry/token`) and `EVE_REGISTRY_HOST` in `secrets.env` in step. The registry trusts tokens signed by `EVE_REGISTRY_SIGNING_KEY` (an RSA key); `scripts/setup.sh` loads the matching certificate into the `eve-registry-cert` secret from `REGISTRY_SIGNING_CERT_PATH`. On a first install, before DNS and a certificate exist for the registry host, run `bin/eve-infra deploy --skip-registry-check` once, then deploy again without it.
 
 ### 8. Verify

@@ -133,6 +133,19 @@ jobs:
           version: 'v1.29.0'
 
       # -----------------------------------------------------------------------
+      # Refuse an overlay that still carries template placeholders
+      # (INSTANCE_PREFIX, GCP_PROJECT, YOUR_REGION, REPLACE_*, example.com).
+      # Set the repository variable EVE_ALLOW_PLACEHOLDERS=1 to override.
+      # -----------------------------------------------------------------------
+      - name: Check for template placeholders
+        env:
+          OVERLAY: ${{ steps.config.outputs.overlay }}
+          EVE_ALLOW_PLACEHOLDERS: ${{ vars.EVE_ALLOW_PLACEHOLDERS }}
+        run: |
+          set -euo pipefail
+          kubectl kustomize "k8s/overlays/${OVERLAY}" | scripts/check-placeholders.sh
+
+      # -----------------------------------------------------------------------
       # Install Helm (used to deploy OpenCost + its Prometheus backend)
       # -----------------------------------------------------------------------
       - name: Install Helm

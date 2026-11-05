@@ -396,6 +396,33 @@ cluster. The member strings are unchanged.
     of a non-release version string such as `latest` now fail fast)
   - `scripts/validate-template.sh`, `tests/` — template-only CI
 
+### fix: refuse to deploy an overlay that still carries template placeholders
+
+- **Scope:** `scripts/check-placeholders.sh` (new), `bin/eve-infra`,
+  `.github/workflows/deploy.yml`, `DEPLOYMENT.md`,
+  `scripts/validate-template.sh`, `tests/test_placeholders.py` (new)
+- **Why:** the overlays ship with values each instance must fill by hand
+  (`INSTANCE_PREFIX`, `GCP_PROJECT`, `YOUR_REGION`, `REPLACE_*`, `example.com`
+  hosts), and nothing stopped a deploy that still carried them: it applied
+  Workload Identity bindings, buckets, ingress hosts and TLS for values that
+  do not exist.
+- **What changed:** `eve-infra deploy` renders the overlay once, before
+  migrations, and stops if any placeholder survives, listing each with the
+  resources that carry it; the same rendered manifests are then applied. The
+  deploy workflow runs the same check before touching the cluster.
+  `EVE_ALLOW_PLACEHOLDERS=1` (environment, or repository variable for the
+  workflow) downgrades the check to a warning. Rendering these values from
+  `config/platform.yaml` is not part of this change.
+- **Sync impact:**
+  - `bin/eve-infra`, `scripts/check-placeholders.sh`,
+    `.github/workflows/deploy.yml` — **action required if your rendered
+    overlay still contains a placeholder** (even an unused one): deploys now
+    stop until you fill it, or set `EVE_ALLOW_PLACEHOLDERS=1`. Run
+    `kubectl kustomize k8s/overlays/<overlay> | scripts/check-placeholders.sh`
+    after syncing to see whether you are affected.
+  - `DEPLOYMENT.md` — informational
+  - `scripts/validate-template.sh`, `tests/` — template-only CI
+
 ## [2026-08-25]
 
 ### fix: preserve migration safety and complete auth bootstrap overlays

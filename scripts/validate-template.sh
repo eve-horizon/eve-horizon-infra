@@ -227,6 +227,11 @@ for overlay in "${OVERLAYS[@]}"; do
     [[ -z "$holders" ]] || fail "$overlay: $needle reaches more than the API: $holders"
   done
 
+  # The template ships placeholders, so deploying it unfilled must be refused.
+  if "$REPO_ROOT/scripts/check-placeholders.sh" "$rendered" 2>/dev/null; then
+    fail "$overlay render carries placeholders that check-placeholders.sh did not report"
+  fi
+
   upgrade_root="$work_root/upgrade-$overlay"
   mkdir -p "$upgrade_root"
   cp -R "$REPO_ROOT/bin" "$REPO_ROOT/config" "$REPO_ROOT/k8s" "$upgrade_root/"
