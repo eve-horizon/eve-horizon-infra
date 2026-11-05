@@ -101,7 +101,7 @@ output "next_steps" {
     5. Deploy platform:
        ./bin/eve-infra deploy
 
-    DNS: ${var.domain} -> ${module.gke.ingress_ip}
+    DNS: ${join(", ", module.dns.platform_fqdns)}, *.apps.${var.domain} -> ${module.gke.ingress_ip}
     Database: ${module.sql.private_ip}
   EOT
 }

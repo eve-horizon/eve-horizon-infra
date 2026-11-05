@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - admission-policies.yaml
   - network-policies.yaml
+  - ingress-host-policy.yaml
   - ../../base
   - storage-workload-identity.yaml
   - registry-pvc.yaml
