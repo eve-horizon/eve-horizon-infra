@@ -197,6 +197,59 @@ cluster. The member strings are unchanged.
     safe (offline `terraform test` with a mocked Google provider; needs
     Terraform >= 1.7)
 
+### fix: keep the Eve-native registry on GCP and refuse a registry that runs without auth
+
+- **Scope:** `k8s/base/registry-deployment.yaml`, `k8s/base/registry-ingress.yaml`,
+  `k8s/overlays/gcp/kustomization.yaml`, `k8s/overlays/gcp/registry-*.yaml` (new),
+  `bin/eve-infra`, `scripts/validate-template.sh`, `scripts/lint-kubectl-safety.sh`,
+  `DEPLOYMENT.md`, `README.md`
+- **What changed:**
+  - The registry image is now `distribution/distribution:3.1.2`, pinned by
+    digest. The API signs registry tokens with an RFC 7638 JWK-thumbprint key
+    ID; distribution v3 matches that against `rootcertbundle`, while
+    `registry:2` keys trusted certificates by libtrust fingerprint and rejects
+    every token the API issues.
+  - The config is mounted at `/etc/distribution/config.yml`, the path v3 reads,
+    and `args` names it explicitly. A v3 image with the old
+    `/etc/docker/registry` mount ignores the config and serves with no auth.
+  - The GCP overlay no longer deletes the registry that build and deploy push
+    to (the GCP DNS module already creates `registry.<domain>`). It stores
+    images on a 10 GiB `eve-registry-data` disk (default ReadWriteOnce class),
+    rolls out with `Recreate`, and publishes `registry.eve.example.com` with
+    TLS on the nginx class.
+  - The registry ingress lifts ingress-nginx's 1 MiB body limit
+    (`proxy-body-size: "0"`), which image layer pushes exceed.
+  - `bin/eve-infra deploy` now checks, after rollout, that
+    `https://<registry host>/v2/` answers 401 with `WWW-Authenticate: Bearer
+    realm=`, and fails otherwise. Overlays without a registry ingress (`aws`)
+    skip it; `--skip-registry-check` covers a first install before DNS and TLS
+    exist.
+  - `scripts/validate-template.sh` fails any overlay whose registry would not
+    read its token-auth config, and tests the deploy check with stubs.
+- **Sync impact:**
+  - `k8s/base/registry-*.yaml` — action required for `aws-eks`: the registry
+    moves from `registry:2` to distribution v3 (S3 storage layout unchanged).
+    If your overlay already overrides the registry `image` or `args`, drop the
+    override or point `args` at `/etc/distribution/config.yml`; an override
+    still naming `/etc/docker/registry/config.yml` now fails validation and
+    the registry will not start.
+  - `k8s/overlays/gcp/` — manual merge for GCP instances that re-added the
+    registry by hand (their own `registry-pvc.yaml`, `registry-*-patch.yaml`
+    and kustomization entries). Keep your PVC and host values, take the
+    template's files, and remove any registry `args` naming
+    `/etc/docker/registry/config.yml`; keep your ingress class if you run
+    Traefik. Then run `scripts/validate-template.sh` and deploy. GCP instances
+    still on the template's registry deletion gain a new registry: set
+    `EVE_REGISTRY_HOST` and `EVE_REGISTRY_SIGNING_KEY` in `secrets.env`, load
+    the signing certificate with `scripts/setup.sh`, and set the host and
+    realm in the overlay before deploying. A GCP instance that pushes app
+    images to its own registry instead can keep the registry deletes in its
+    kustomization; deploy then skips the check.
+  - `bin/eve-infra`, `scripts/` — auto-sync safe (deploy fails loudly on an
+    unauthenticated registry; the kubectl lint allows only the offline
+    `annotate --local` form)
+  - `DEPLOYMENT.md`, `README.md` — auto-sync safe
+
 ## [2026-08-25]
 
 ### fix: preserve migration safety and complete auth bootstrap overlays

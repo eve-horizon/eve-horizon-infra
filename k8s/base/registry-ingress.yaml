@@ -7,6 +7,8 @@ metadata:
     app.kubernetes.io/name: eve-registry
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
+    # Image layer uploads exceed ingress-nginx's 1 MiB default body limit.
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
 spec:
   ingressClassName: nginx
   tls:

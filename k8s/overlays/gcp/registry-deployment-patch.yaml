@@ -1,0 +1,21 @@
+# Keep registry images on a persistent disk. Recreate, because the disk is
+# ReadWriteOnce: a surge pod on another node could never attach it.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: eve-registry
+  namespace: eve
+spec:
+  strategy:
+    type: Recreate
+  template:
+    spec:
+      containers:
+        - name: registry
+          volumeMounts:
+            - name: registry-data
+              mountPath: /var/lib/registry
+      volumes:
+        - name: registry-data
+          persistentVolumeClaim:
+            claimName: eve-registry-data

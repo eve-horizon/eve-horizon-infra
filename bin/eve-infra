@@ -472,15 +472,79 @@ cmd_upgrade() {
   echo "    eve-infra deploy"
 }
 
+# Print the public host of the Eve-native registry an overlay renders, or
+# nothing when the overlay has no registry ingress (aws pulls from ECR).
+# Offline: `annotate --local` only parses the rendered manifests.
+registry_ingress_host() {
+  local overlay_dir="$1" rendered
+  if command -v kustomize &>/dev/null; then
+    rendered="$(kustomize build "$overlay_dir")" || return 1
+  else
+    rendered="$(kubectl kustomize "$overlay_dir")" || return 1
+  fi
+  printf '%s\n' "$rendered" \
+    | KUBECONFIG=/dev/null kubectl annotate --local -f - eve-infra/query=registry-host \
+        -o 'go-template={{if and (eq .kind "Ingress") (eq .metadata.name "eve-registry")}}{{range .spec.rules}}{{.host}}{{"\n"}}{{end}}{{end}}' \
+    | sed -n '1p'
+}
+
+# Fail the deploy unless the registry demands a bearer token. A registry that
+# misses its token-auth config starts anyway and lets anyone push and pull.
+verify_registry_auth() {
+  local overlay_dir="$1" host
+  host="$(registry_ingress_host "$overlay_dir")" \
+    || die "Could not read the registry host from $overlay_dir; the registry auth check cannot run."
+  if [[ -z "$host" ]]; then
+    info "Overlay renders no Eve-native registry; skipping the registry auth check."
+    return 0
+  fi
+  command -v curl &>/dev/null || die "curl is required for the registry auth check."
+
+  echo -n "  deployment/eve-registry... "
+  if kube rollout status deployment/eve-registry -n "$NAMESPACE" --timeout=120s 2>/dev/null; then
+    echo -e "${GREEN}ready${RESET}"
+  else
+    echo -e "${RED}timed out${RESET}"
+  fi
+
+  local url="https://${host}/v2/" attempt response status challenge
+  info "Checking that ${url} demands a bearer token..."
+  for attempt in 1 2 3 4 5 6; do
+    response="$(curl -sS -o /dev/null -D - --max-time 10 "$url" 2>&1 | tr -d '\r' || true)"
+    status="$(printf '%s\n' "$response" | awk '/^HTTP\//{code=$2} END{print code}')"
+    challenge="$(printf '%s\n' "$response" | grep -i '^www-authenticate: *bearer realm=' | sed -n '1p' || true)"
+    if [[ "$status" == "401" && -n "$challenge" ]]; then
+      ok "Registry ${host} requires token auth (${challenge#*: })"
+      return 0
+    fi
+    # Any other answer from the registry itself is definitive; only an
+    # unreachable or not-yet-routed host is worth waiting for.
+    if [[ "$status" == 2* || "$status" == "401" || "$attempt" -eq 6 ]]; then
+      break
+    fi
+    sleep 10
+  done
+
+  local last="${response%%$'\n'*}"
+  die "Registry ${host} did not answer GET /v2/ with 401 and a 'WWW-Authenticate: Bearer realm=' challenge.
+  Last response: ${last:-none}
+  If it answered 200, it is running without its token-auth config and anyone can
+  push and pull. Check the registry args name its mounted config:
+    kubectl -n ${NAMESPACE} get deployment eve-registry -o yaml
+    kubectl -n ${NAMESPACE} logs deployment/eve-registry
+  While DNS or TLS for ${host} is still being set up, re-run with --skip-registry-check."
+}
+
 cmd_deploy() {
   require_cluster_access write
 
-  local skip_migrate=false
+  local skip_migrate=false skip_registry_check=false
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --skip-migrate) skip_migrate=true; shift ;;
+      --skip-registry-check) skip_registry_check=true; shift ;;
       *) die "Unknown deploy flag: $1
-  Usage: eve-infra deploy [--skip-migrate]" ;;
+  Usage: eve-infra deploy [--skip-migrate] [--skip-registry-check]" ;;
     esac
   done
 
@@ -526,6 +590,13 @@ cmd_deploy() {
       echo -e "${RED}timed out${RESET}"
     fi
   done
+
+  echo ""
+  if [[ "$skip_registry_check" == "true" ]]; then
+    warn "Skipping the registry auth check (--skip-registry-check)."
+  else
+    verify_registry_auth "$overlay_dir"
+  fi
 
   echo ""
   ok "Deploy complete."
@@ -834,6 +905,8 @@ Platform:
   kubeconfig refresh  Regenerate config/kubeconfig.yaml (aws/eks)
   upgrade <version>   Update platform.yaml, patch overlays for new version
   deploy              Run pending migrations + apply current config (use --skip-migrate to deploy without migrating)
+                      Then checks the Eve-native registry demands a bearer token
+                      (--skip-registry-check only while its DNS/TLS is being set up)
   health              Run health check against the API endpoint
 
 Secrets:
