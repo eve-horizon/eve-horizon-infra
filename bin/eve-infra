@@ -531,6 +531,20 @@ cmd_deploy() {
   ok "Deploy complete."
 }
 
+# The API reads its signing and encryption keys from eve-api-keys. Once
+# secrets sync moves them out of eve-app, an eve-api Deployment that predates
+# the split would start without them on its next restart, so require the new
+# manifests first. A missing Deployment means first-time setup.
+assert_api_mounts_api_keys() {
+  local refs
+  refs="$(kube get deployment eve-api -n "$NAMESPACE" \
+    -o jsonpath='{.spec.template.spec.containers[*].envFrom[*].secretRef.name}' 2>/dev/null)" || return 0
+  [[ " $refs " == *" eve-api-keys "* ]] && return 0
+  die "deployment/eve-api does not load the 'eve-api-keys' secret yet, and this sync moves
+  the API's signing keys out of 'eve-app'. Run 'eve-infra deploy' first (the new
+  reference is optional, so it is safe before the secret exists), then sync again."
+}
+
 cmd_secrets_sync() {
   require_cluster_access write
 
@@ -539,16 +553,20 @@ cmd_secrets_sync() {
   Create it from the example:
     cp config/secrets.env.example config/secrets.env"
   fi
+  command -v python3 &>/dev/null || die "python3 is required to render secrets."
 
-  info "Syncing secrets from config/secrets.env -> k8s secret 'eve-app' in namespace '${NAMESPACE}'..."
+  assert_api_mounts_api_keys
 
-  kube create secret generic eve-app \
-    --from-env-file="$SECRETS_FILE" \
-    --namespace="$NAMESPACE" \
-    --dry-run=client -o yaml \
-    | kube apply -f -
+  info "Syncing config/secrets.env -> secrets 'eve-app' and 'eve-api-keys' in namespace '${NAMESPACE}'..."
 
-  ok "Secret 'eve-app' updated."
+  # Render first, so a malformed file never reaches kubectl. The renderer
+  # handles multi-line PEM values, which --from-env-file cannot.
+  local manifest
+  manifest="$(python3 "$REPO_ROOT/scripts/render-k8s-secrets.py" --namespace "$NAMESPACE" "$SECRETS_FILE")" \
+    || die "Could not render ${SECRETS_FILE}; no secret was changed."
+  printf '%s\n' "$manifest" | kube apply -f -
+
+  ok "Secrets 'eve-app' and 'eve-api-keys' updated."
   echo ""
   echo "  Services will pick up new values on next restart:"
   echo "    eve-infra restart api"
@@ -558,12 +576,15 @@ cmd_secrets_sync() {
 cmd_secrets_show() {
   require_cluster_access read
 
-  info "Configured keys in secret 'eve-app':"
-  echo ""
-  kube get secret eve-app -n "$NAMESPACE" -o json 2>/dev/null \
-    | jq -r '.data | keys[]' 2>/dev/null \
-    | sort \
-    || warn "Could not read secret 'eve-app'. It may not exist yet."
+  local name
+  for name in eve-app eve-api-keys; do
+    info "Configured keys in secret '${name}':"
+    kube get secret "$name" -n "$NAMESPACE" -o json 2>/dev/null \
+      | jq -r '.data // {} | keys[]' 2>/dev/null \
+      | sort \
+      || warn "Could not read secret '${name}'. It may not exist yet."
+    echo ""
+  done
 }
 
 cmd_db_migrate() {
@@ -837,7 +858,7 @@ Platform:
   health              Run health check against the API endpoint
 
 Secrets:
-  secrets sync        Push config/secrets.env to k8s eve-app secret
+  secrets sync        Push config/secrets.env to the eve-app and eve-api-keys secrets
   secrets show        List which secret keys are configured
 
 Database:

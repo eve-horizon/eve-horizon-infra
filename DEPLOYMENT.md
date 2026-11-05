@@ -87,15 +87,29 @@ openssl rand -hex 32    # -> EVE_BOOTSTRAP_TOKEN
 
 # Database password (also used in terraform.tfvars)
 openssl rand -base64 24 # -> used in DATABASE_URL
+
+# Token-signing key. A PEM spans several lines, so it goes in double quotes.
+# Delete the empty EVE_AUTH_PRIVATE_KEY= line from secrets.env, then:
+printf 'EVE_AUTH_PRIVATE_KEY="%s"\n' "$(openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048)" >> config/secrets.env
 ```
 
 Set at minimum:
 
-- `EVE_SECRETS_MASTER_KEY`, `EVE_INTERNAL_API_KEY`, `EVE_BOOTSTRAP_TOKEN`
+- `EVE_SECRETS_MASTER_KEY`, `EVE_INTERNAL_API_KEY`, `EVE_BOOTSTRAP_TOKEN`, `EVE_AUTH_PRIVATE_KEY`
 - `DATABASE_URL` -- constructed from Terraform output after provisioning (see step 4)
-- `GITHUB_TOKEN` -- PAT with `repo`, `read:org` scopes
 
-LLM provider keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, etc.) are managed via the Eve CLI after bootstrap, not as cluster secrets.
+`bin/eve-infra secrets sync` (run by `scripts/setup.sh`) writes two Kubernetes
+secrets from this file: `eve-app`, which every Eve service loads, and
+`eve-api-keys`, which holds the keys marked `[API ONLY]` in the example (the
+secrets master key, the token-signing keys, the bootstrap token) and which
+only the API mounts. Multi-line values such as PEM keys must be wrapped in
+double quotes; `\n` inside double quotes is also read as a line break.
+
+LLM provider keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, etc.), Claude Code
+tokens and the GitHub token (`GITHUB_TOKEN`) are Eve org secrets, set with the
+Eve CLI after bootstrap (`eve secrets set <KEY> <value> --scope org --org <org-id>`),
+not cluster secrets. Anything you put in `secrets.env` lands in `eve-app` and
+so in every service pod, the agent runtime included.
 
 **Never commit `secrets.env`.** It is already in `.gitignore`.
 
@@ -247,13 +261,17 @@ When you add or rotate secrets:
 # Edit the secrets file
 $EDITOR config/secrets.env
 
-# Push to the cluster
+# Push to the cluster (eve-app + the API-only eve-api-keys)
 bin/eve-infra secrets sync
 
 # Restart services to pick up new values
 bin/eve-infra restart api
 bin/eve-infra restart worker
 ```
+
+On a cluster deployed before the `eve-api-keys` split, run `bin/eve-infra deploy`
+once before the first sync: the sync moves the API's keys out of `eve-app` and
+refuses to run until the API Deployment loads `eve-api-keys`.
 
 To see which keys are currently configured in the cluster:
 

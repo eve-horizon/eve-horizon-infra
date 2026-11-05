@@ -10,6 +10,7 @@
 # Prerequisites:
 #   - config/kubeconfig.yaml configured to reach your target cluster
 #   - helm v3 installed (for cert-manager)
+#   - python3 (renders the Kubernetes secrets from secrets.env)
 #   - config/secrets.env populated (see config/secrets.env.example)
 #
 # Usage:
@@ -271,11 +272,9 @@ ok "Registry: public ECR (platform) + Eve-native (app builds). No pull secret ne
 # -------------------------------------------------------------------------
 info "Syncing application secrets..."
 if [[ -f "$SECRETS_FILE" ]]; then
-  kubectl create secret generic eve-app \
-    --from-env-file="$SECRETS_FILE" \
-    --namespace="$NAMESPACE" \
-    --dry-run=client -o yaml | kubectl apply -f -
-  ok "Secret 'eve-app' created."
+  # One implementation for setup and day-two syncs: it renders eve-app and the
+  # API-only eve-api-keys, and carries multi-line PEM keys intact.
+  "$REPO_ROOT/bin/eve-infra" secrets sync
 else
   warn "Skipping (no secrets.env file)."
 fi

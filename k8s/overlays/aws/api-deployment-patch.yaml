@@ -35,7 +35,7 @@ spec:
             - name: EVE_REGISTRY_SIGNING_KEY
               valueFrom:
                 secretKeyRef:
-                  name: eve-app
+                  name: eve-api-keys
                   key: EVE_REGISTRY_SIGNING_KEY
                   optional: true
             - name: EVE_INTERNAL_API_KEY

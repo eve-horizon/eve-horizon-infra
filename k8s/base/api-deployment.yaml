@@ -26,9 +26,15 @@ spec:
           image: eve-horizon/api:local
           imagePullPolicy: IfNotPresent
           envFrom:
-            # Mount all secrets from eve-app (auth tokens, API keys, etc.)
+            # Keys every service shares (database, internal API key, etc.)
             - secretRef:
                 name: eve-app
+            # Signing and encryption keys only the API reads. No other
+            # workload mounts this secret. Optional so a cluster can take
+            # these manifests before `eve-infra secrets sync` creates it.
+            - secretRef:
+                name: eve-api-keys
+                optional: true
           env:
             - name: DATABASE_URL
               value: postgres://eve:eve@postgres.eve.svc.cluster.local:5432/eve
