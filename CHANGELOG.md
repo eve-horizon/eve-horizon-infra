@@ -7,6 +7,25 @@ Each entry includes **Sync impact** to guide what downstream agents need to do.
 
 ---
 
+## [2026-11-05]
+
+### fix: run the API in production mode
+
+- **Scope:** `k8s/base/api-deployment.yaml`,
+  `k8s/overlays/aws/api-deployment-patch.yaml`, `scripts/validate-template.sh`
+- **Sync impact:**
+  - `k8s/base/api-deployment.yaml` — auto-sync safe; sets `NODE_ENV=production`
+    on `eve-api`. Platform images up to 0.1.321 set no `NODE_ENV`, so the API
+    ran in development mode, where a completed first-admin bootstrap re-issued
+    the admin's token to any caller. In production mode bootstrap requires
+    `EVE_BOOTSTRAP_TOKEN` and is closed once an admin exists.
+  - `k8s/overlays/*/api-deployment-patch.yaml` — **action required** for any
+    instance overlay whose API patch replaces the env list (`$patch: replace`):
+    add `NODE_ENV=production` there too, or the base value is dropped. Verify
+    with `kubectl kustomize k8s/overlays/<overlay>` and roll the API.
+  - `scripts/validate-template.sh` — template-only CI assertion that every
+    overlay renders `NODE_ENV=production` on `eve-api`
+
 ## [2026-08-25]
 
 ### fix: preserve migration safety and complete auth bootstrap overlays
