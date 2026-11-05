@@ -510,10 +510,10 @@ verify_registry_auth() {
   command -v curl &>/dev/null || die "curl is required for the registry auth check."
 
   echo -n "  deployment/eve-registry... "
-  if kube rollout status deployment/eve-registry -n "$NAMESPACE" --timeout=120s 2>/dev/null; then
+  if kube rollout status deployment/eve-registry -n "$NAMESPACE" --timeout="$ROLLOUT_TIMEOUT" 2>/dev/null; then
     echo -e "${GREEN}ready${RESET}"
   else
-    echo -e "${RED}timed out${RESET}"
+    echo -e "${RED}not ready after ${ROLLOUT_TIMEOUT}${RESET}"
   fi
 
   local url="https://${host}/v2/" attempt response status challenge
