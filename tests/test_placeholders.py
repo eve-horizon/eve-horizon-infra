@@ -56,7 +56,9 @@ class PlaceholderCheckTest(unittest.TestCase):
                            ("INSTANCE_PREFIX", "StorageClass/filestore-rwx"),
                            ("GCP_PROJECT", "ServiceAccount/eve-api"),
                            ("YOUR_REGION", "Deployment/eve-api"),
-                           ("apps.example.com", "Deployment/eve-worker"),
+                           ("apps.eve.example.com", "Deployment/eve-worker"),
+                           ("apps.eve.example.com", "Deployment/eve-api"),
+                           ("eve.example.com", "ValidatingAdmissionPolicy/eve-ingress-host-guard"),
                            ("registry.eve.example.com", "Ingress/eve-registry")):
             self.assertIn(obj, found.get(token, ()), f"{token} not reported on {obj}: {found}")
 
