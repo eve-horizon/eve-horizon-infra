@@ -32,7 +32,9 @@ rules:
 # in them. It never watches, never lists Secrets, and never creates
 # DaemonSets, StatefulSets, ReplicaSets or CronJobs, so those are not granted.
 # Admission guards (overlays/gcp/admission-policies.yaml) refuse privileged
-# or host-level pods and writes in system namespaces from this identity.
+# or host-level pods, writes in system namespaces, and any write in eve other
+# than runner pods and their claims. They cannot refuse reads: this identity
+# still reads Secrets in eve until job code leaves the worker pod.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
