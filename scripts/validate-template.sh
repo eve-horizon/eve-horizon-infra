@@ -43,6 +43,26 @@ for overlay in "${OVERLAYS[@]}"; do
       || fail "$overlay render is missing the $service service image"
   done
 
+  # BuildKit runs a digest-pinned release, and its GC limits fit its cache
+  # volume: MinFree + MaxUsed below the volume, Reserved below MaxUsed.
+  grep -Eq '^ +image: moby/buildkit:v[0-9.]+@sha256:[0-9a-f]{64}$' "$rendered" \
+    || fail "$overlay: buildkitd image is not a release pinned by digest"
+  gc="$(sed -n 's/^ *- --oci-worker-gc-keepstorage=//p' "$rendered")"
+  cache_size="$(awk '
+    function flush() { if (kind == "PersistentVolumeClaim" && name == "buildkitd-cache") print size; kind = name = size = "" }
+    /^---$/ { flush(); next }
+    /^kind: / { kind = $2 }
+    /^  name: / { name = $2 }
+    /^ +storage: / { size = $2 }
+    END { flush() }' "$rendered")"
+  [[ "$cache_size" =~ ^([0-9]+)Gi$ ]] || fail "$overlay: unexpected buildkitd-cache size '$cache_size'"
+  cache_mb=$((BASH_REMATCH[1] * 1024))
+  IFS=, read -r gc_reserved gc_free gc_max <<<"$gc"
+  [[ "$gc_reserved" =~ ^[0-9]+$ && "$gc_free" =~ ^[0-9]+$ && "$gc_max" =~ ^[0-9]+$ ]] \
+    || fail "$overlay: buildkitd GC must be Reserved,MinFree,MaxUsed in MB, got '$gc'"
+  ((gc_reserved < gc_max && gc_free + gc_max < cache_mb)) \
+    || fail "$overlay: buildkitd GC ($gc MB) does not fit its $cache_size cache volume"
+
   upgrade_root="$work_root/upgrade-$overlay"
   mkdir -p "$upgrade_root"
   cp -R "$REPO_ROOT/bin" "$REPO_ROOT/config" "$REPO_ROOT/k8s" "$upgrade_root/"

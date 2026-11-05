@@ -8,4 +8,5 @@ spec:
     - ReadWriteOnce
   resources:
     requests:
+      # buildkitd's GC limits (buildkitd-deployment.yaml) are sized for this.
       storage: 20Gi
