@@ -17,6 +17,7 @@ fail() {
 
 command -v git >/dev/null || fail "git is required"
 command -v kubectl >/dev/null || fail "kubectl with Kustomize v5 is required"
+command -v python3 >/dev/null || fail "python3 is required"
 
 if git -C "$REPO_ROOT" grep -n -I -i -E \
   'corf\.ai|corfai|api\.eh1\.incept5\.dev|org_Incept5|proj_[0-9a-z]{10,}|user_[0-9a-z]{10,}' \
@@ -83,5 +84,7 @@ for overlay in "${OVERLAYS[@]}"; do
       || fail "$overlay upgraded render is missing pinned $service"
   done
 done
+
+python3 -m unittest discover -q -s "$REPO_ROOT/tests" || fail "Python tests failed"
 
 echo "Template validation passed: 3 overlays, 7 services, migration, and scrub checks."

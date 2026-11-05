@@ -7,6 +7,34 @@ Each entry includes **Sync impact** to guide what downstream agents need to do.
 
 ---
 
+## [2026-11-05]
+
+### fix: give the db status and connect pods only the database URL
+
+- **Scope:** `bin/eve-infra`, `scripts/pg-env-from-url.awk` (new), `README.md`,
+  `scripts/validate-template.sh`, `tests/test_db_pods.py` (new)
+- **Why:** the throwaway psql pods behind `eve-infra db status` and
+  `db connect` loaded every key in `eve-app` with `envFrom`, ran an unpinned
+  Docker Hub `postgres:16-alpine`, and handed `DATABASE_URL` to psql as an
+  argument, where process listings (and agents that record command lines)
+  can read the password.
+- **What changed:** the pods load `DATABASE_URL` alone through
+  `secretKeyRef`, run `postgres:17.11-alpine` pinned to its multi-arch index
+  digest, and convert the URL into libpq variables (`PGHOST`, `PGPASSWORD`,
+  ...) before psql starts with no connection arguments. The converter
+  decodes percent-encoding, passes on libpq query parameters such as
+  `sslmode`, and fails without echoing the URL. Template CI runs both
+  commands against a stub cluster and checks the pod spec and psql's
+  arguments.
+- **Sync impact:**
+  - `bin/eve-infra`, `scripts/` — auto-sync safe. `db status` and
+    `db connect` now need `jq` locally (already used by `secrets show`). A
+    multi-host `DATABASE_URL` is refused by these two commands; deployments
+    are unaffected. The psql client moves from 16 to 17, which supports
+    PostgreSQL 15 servers.
+  - `README.md` — informational
+  - `scripts/validate-template.sh`, `tests/` — template-only CI
+
 ## [2026-08-25]
 
 ### fix: preserve migration safety and complete auth bootstrap overlays
