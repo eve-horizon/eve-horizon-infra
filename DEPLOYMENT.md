@@ -178,6 +178,10 @@ bin/eve-infra health
 ```
 
 The deploy command builds manifests from `k8s/overlays/<overlay>/` (`overlay` from `config/platform.yaml`, falling back to `cloud`) and applies them to the cluster, then waits for rollouts to complete.
+It waits up to 600s per workload (the worker can take a few minutes on its
+first boot) and exits non-zero if any rollout has not finished. Set
+`EVE_ROLLOUT_TIMEOUT` (for example `15m`) to change the wait; the deploy
+workflow reads the repository variable of the same name.
 
 ### 8. Verify
 
