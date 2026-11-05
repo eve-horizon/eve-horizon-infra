@@ -26,6 +26,17 @@ if git -C "$REPO_ROOT" grep -n -I -i -E \
   fail "template contains instance-specific domains, IDs, or names"
 fi
 
+# Template-only CI must not run, and fail, in repos created from the template;
+# instance-only workflows must not run in the template.
+workflows="$REPO_ROOT/.github/workflows"
+awk '/^  manifests:/ { job = 1; next } /^  [a-z]/ { job = 0 } job' "$workflows/template-ci.yml" \
+  | grep -Fqx "    if: github.repository == 'eve-horizon/eve-horizon-infra'" \
+  || fail "template-ci.yml manifests job must run only in the canonical template"
+for workflow in deploy.yml health-check.yml upgrade-check.yml; do
+  grep -Fq "if: github.repository != 'eve-horizon/eve-horizon-infra'" "$workflows/$workflow" \
+    || fail "$workflow must not run in the canonical template"
+done
+
 work_root="$(mktemp -d)"
 trap 'rm -rf "$work_root"' EXIT
 

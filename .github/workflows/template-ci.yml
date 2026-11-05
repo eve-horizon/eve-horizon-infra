@@ -16,6 +16,11 @@ concurrency:
 jobs:
   manifests:
     name: Manifests and upgrade contract
+    # validate-template.sh checks the canonical template's contract (floating
+    # tags, placeholder values, no instance names). Repos created from the
+    # template inherit this workflow but not that contract, so the job runs
+    # only here; deploy.yml carries the inverse guard.
+    if: github.repository == 'eve-horizon/eve-horizon-infra'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -31,6 +36,8 @@ jobs:
 
   terraform:
     name: Terraform (${{ matrix.root }})
+    # Formatting and credential-free validation hold for instances too, so
+    # this job runs in every repo created from the template.
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
