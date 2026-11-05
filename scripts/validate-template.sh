@@ -17,6 +17,21 @@ fail() {
 
 command -v git >/dev/null || fail "git is required"
 command -v kubectl >/dev/null || fail "kubectl with Kustomize v5 is required"
+command -v python3 >/dev/null || fail "python3 is required"
+
+# Print "<Kind>/<name>" for each rendered document containing a fixed string.
+rendered_objects_mentioning() {
+  awk -v needle="$2" '
+    function flush() { if (hit) print kind "/" name; kind = ""; name = ""; hit = 0; meta = 0 }
+    /^---$/ { flush(); next }
+    /^kind: / { kind = $2 }
+    /^metadata:/ { meta = 1; next }
+    /^[^ ]/ { meta = 0 }
+    meta && /^  name: / { name = $2 }
+    index($0, needle) { hit = 1 }
+    END { flush() }
+  ' "$1"
+}
 
 # Outputs are printed by `terraform output -json` and readable through remote
 # state, `sensitive` or not. None may carry the database password.
@@ -132,6 +147,9 @@ if git -C "$REPO_ROOT" grep -n -E \
   fail "Terraform guards a function call with && or || on a null check"
 fi
 
+API_ONLY_KEYS="$(python3 -c 'import runpy, sys; print(*sorted(runpy.run_path(sys.argv[1])["API_ONLY_KEYS"]))' \
+  "$REPO_ROOT/scripts/render-k8s-secrets.py")"
+
 work_root="$(mktemp -d)"
 trap 'rm -rf "$work_root"' EXIT
 
@@ -184,6 +202,18 @@ for overlay in "${OVERLAYS[@]}"; do
   for ((replica = 0; replica < runtime_replicas; replica++)); do
     grep -Fq "eve-agent-runtime-${replica}=" <<<"$runtime_urls" \
       || fail "$overlay runs eve-agent-runtime-${replica} but EVE_AGENT_RUNTIME_URLS does not map it"
+  done
+
+  # `eve-infra secrets sync` owns eve-app and eve-api-keys; a deploy must not
+  # overwrite them. Only the API may load eve-api-keys or its keys.
+  if rendered_objects_mentioning "$rendered" "kind: " | grep -Eqx 'Secret/(eve-app|eve-api-keys)'; then
+    fail "$overlay render would overwrite a secret that secrets sync owns"
+  fi
+  rendered_objects_mentioning "$rendered" "eve-api-keys" | grep -qx 'Deployment/eve-api' \
+    || fail "$overlay: eve-api does not load eve-api-keys"
+  for needle in eve-api-keys $API_ONLY_KEYS; do
+    holders="$(rendered_objects_mentioning "$rendered" "$needle" | grep -vx 'Deployment/eve-api' || true)"
+    [[ -z "$holders" ]] || fail "$overlay: $needle reaches more than the API: $holders"
   done
 
   upgrade_root="$work_root/upgrade-$overlay"
@@ -462,5 +492,7 @@ if grep -Eq 'ReadWriteMany|name: filestore-rwx' "$disk_render"; then
 fi
 grep -Fxq '            topologyKey: kubernetes.io/hostname' "$disk_render" \
   || fail "gcp disk profile does not keep agent runtimes on one node"
+
+python3 -m unittest discover -q -s "$REPO_ROOT/tests" || fail "Python tests failed"
 
 echo "Template validation passed: 3 overlays, 7 services, migration, GCP storage identity, registry auth, and scrub checks."

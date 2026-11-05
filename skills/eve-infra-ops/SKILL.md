@@ -122,8 +122,9 @@ kubectl -n eve rollout restart deployment/eve-api
 ### Secrets
 
 ```bash
-# List keys in the app secret
+# List keys in the shared secret and the API-only secret
 kubectl -n eve get secret eve-app -o json | jq -r '.data | keys[]'
+kubectl -n eve get secret eve-api-keys -o json | jq -r '.data | keys[]'
 
 # Decode a specific value
 kubectl -n eve get secret eve-app -o json | jq -r '.data.DATABASE_URL' | base64 -d

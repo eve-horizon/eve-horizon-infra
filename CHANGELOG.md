@@ -312,6 +312,56 @@ cluster. The member strings are unchanged.
     downstream overlay that raised replicas without extending the map will now
     fail validation, which is the point: work routed to that pod was failing.
 
+### fix: keep API signing keys out of other services and carry PEM keys intact
+
+- **Scope:** `scripts/render-k8s-secrets.py` (new), `bin/eve-infra`,
+  `scripts/setup.sh`, `k8s/base/api-deployment.yaml`, `k8s/base/app-secret.yaml`,
+  `k8s/overlays/{aws,aws-eks}/api-deployment-patch.yaml`,
+  `k8s/overlays/aws-eks/{kustomization.yaml,remove-app-secret.yaml}`,
+  `config/secrets.env.example`, `DEPLOYMENT.md`, `README.md`,
+  `skills/eve-infra-ops/`, `scripts/validate-template.sh`,
+  `tests/test_k8s_secrets.py` (new)
+- **Why:** every service loaded every platform secret through `envFrom: eve-app`,
+  so the worker, orchestrator, gateway, SSO and agent runtime held the keys
+  that mint user and registry tokens and decrypt org secrets. Separately,
+  `kubectl create secret --from-env-file` reads one line per key, so the
+  multi-line PEM keys the example promised could not be synced at all.
+- **What changed:** `secrets sync` (and `setup.sh`, which now calls it) renders
+  two secrets from `config/secrets.env`: `eve-app` for every service and
+  `eve-api-keys` for the keys only the API reads (`EVE_SECRETS_MASTER_KEY`,
+  `EVE_AUTH_PRIVATE_KEY`, `EVE_AUTH_JWT_SECRET`, `EVE_REGISTRY_SIGNING_KEY`,
+  `EVE_BOOTSTRAP_TOKEN`, `EVE_ORG_FS_LINK_TOKEN_SECRET`,
+  `EVE_GITHUB_WEBHOOK_SECRET`, `SUPABASE_AUTH_SERVICE_KEY`). Only `eve-api`
+  mounts `eve-api-keys` (optional reference). The env file accepts
+  double-quoted multi-line values (and `\n` escapes inside double quotes);
+  unquoted values are read verbatim as before. The example documents
+  `EVE_AUTH_PRIVATE_KEY` with a generation command, marks the API-only keys,
+  and moves LLM and GitHub keys to Eve org secrets. The aws-eks overlay no
+  longer renders the blank `eve-app` placeholder, which a deploy would have
+  applied over the synced values.
+- **Sync impact:**
+  - `k8s/base/`, `bin/eve-infra`, `scripts/` — **action required, in order:**
+    sync, then `eve-infra deploy` (the API now also loads the optional
+    `eve-api-keys`; nothing else changes yet), then `eve-infra secrets sync`
+    (moves the API-only keys out of `eve-app`), then restart services so they
+    drop the old values. `secrets sync` refuses to run until the live
+    `eve-api` Deployment loads `eve-api-keys`, so the keys cannot vanish from
+    the API on a restart. `secrets sync` now needs `python3`.
+  - `config/secrets.env` — no edit needed for single-line values. Values that
+    start with a quote are now unquoted (`KEY="v"` gives `v`, where kubectl
+    kept the quotes); a value that opens a quote must close it at the end of
+    a line. A PEM must be wrapped in double quotes; an unquoted one is
+    rejected with the line number, never the value.
+  - `k8s/overlays/{aws,aws-eks}/api-deployment-patch.yaml` — manual merge
+    (`EVE_REGISTRY_SIGNING_KEY` now reads from `eve-api-keys`)
+  - `k8s/overlays/aws-eks/` — manual merge (add `remove-app-secret.yaml` and
+    its patch entry)
+  - `config/secrets.env.example`, `DEPLOYMENT.md`, `skills/eve-infra-ops/` —
+    informational
+  - `scripts/validate-template.sh`, `tests/` — template CI: renders must not
+    contain `eve-app`/`eve-api-keys`, and only `eve-api` may reference
+    `eve-api-keys` or an API-only key
+
 ## [2026-08-25]
 
 ### fix: preserve migration safety and complete auth bootstrap overlays
