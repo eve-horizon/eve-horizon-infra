@@ -11,7 +11,7 @@
 # eve-api-internal shares eve-api's host. On ingress-nginx (and on Traefik,
 # which tries the longest rule first) the Exact token path wins over the
 # /internal Prefix, which wins over eve-api's "/".
-# Keep its host and ingress class in step with the eve-api Ingress.
+# Keep its host, ingress class and TLS in step with the eve-api Ingress.
 #
 # The dashboard proxies /api/* to the API with the /api prefix removed, so
 # https://<dashboard host>/api/internal/... reaches the same routes. Its
@@ -44,6 +44,11 @@ metadata:
   annotations:
     kubernetes.io/ingress.class: nginx
 spec:
+  # eve-api's certificate; eve-api owns it (no issuer annotation here).
+  tls:
+    - hosts:
+        - api.eve.example.com
+      secretName: eve-api-tls
   rules:
     - host: api.eve.example.com
       http:
@@ -73,6 +78,11 @@ metadata:
   annotations:
     kubernetes.io/ingress.class: nginx
 spec:
+  # eve-dashboard's certificate; eve-dashboard owns it.
+  tls:
+    - hosts:
+        - dashboard.eve.example.com
+      secretName: eve-dashboard-tls
   rules:
     - host: dashboard.eve.example.com
       http:
