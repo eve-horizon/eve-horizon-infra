@@ -6,11 +6,14 @@
 # pools separate core services, agent runtimes, and user-deployed apps.
 
 locals {
-  effective_region                    = (var.region != null && trimspace(var.region) != "") ? trimspace(var.region) : var.gcp_region
-  effective_default_node_machine_type = (var.compute_type != null && trimspace(var.compute_type) != "") ? trimspace(var.compute_type) : var.default_node_machine_type
+  # Canonical overrides win when set and not blank. Test for null with a
+  # conditional, never with &&: Terraform 1.10 evaluates both operands of &&,
+  # so a "!= null &&" guard still calls trimspace(null) and fails the plan.
+  effective_region                    = var.region == null ? var.gcp_region : (trimspace(var.region) != "" ? trimspace(var.region) : var.gcp_region)
+  effective_default_node_machine_type = var.compute_type == null ? var.default_node_machine_type : (trimspace(var.compute_type) != "" ? trimspace(var.compute_type) : var.default_node_machine_type)
   effective_boot_disk_size            = var.compute_disk_size_gb != null ? var.compute_disk_size_gb : var.boot_disk_size
-  effective_db_tier                   = (var.database_instance_class != null && trimspace(var.database_instance_class) != "") ? trimspace(var.database_instance_class) : var.db_tier
-  effective_ollama_machine_type       = (var.ollama_compute_type != null && trimspace(var.ollama_compute_type) != "") ? trimspace(var.ollama_compute_type) : var.ollama_machine_type
+  effective_db_tier                   = var.database_instance_class == null ? var.db_tier : (trimspace(var.database_instance_class) != "" ? trimspace(var.database_instance_class) : var.db_tier)
+  effective_ollama_machine_type       = var.ollama_compute_type == null ? var.ollama_machine_type : (trimspace(var.ollama_compute_type) != "" ? trimspace(var.ollama_compute_type) : var.ollama_machine_type)
   effective_ollama_disk_size          = var.ollama_disk_size_gb != null ? var.ollama_disk_size_gb : var.ollama_disk_size
 }
 
