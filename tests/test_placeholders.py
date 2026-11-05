@@ -25,6 +25,16 @@ def render(overlay_dir):
                           capture_output=True, text=True).stdout
 
 
+def reported(stderr):
+    """Map each reported placeholder to the objects the check names for it."""
+    found = {}
+    for line in stderr.splitlines():
+        match = re.match(r"^  (\S+): (.+)$", line)
+        if match:
+            found[match.group(1)] = match.group(2).split(", ")
+    return found
+
+
 def check(text, **env):
     return subprocess.run([str(CHECK)], input=text, capture_output=True, text=True,
                           env={**os.environ, **env})
@@ -38,10 +48,17 @@ class PlaceholderCheckTest(unittest.TestCase):
                 result = check(render(REPO / "k8s/overlays" / overlay))
                 self.assertEqual(result.returncode, 1, result.stderr)
                 self.assertIn("api.eve.example.com: ", result.stderr)
-        result = check(render(REPO / "k8s/overlays/gcp"))
-        for token in ("INSTANCE_PREFIX: ServiceAccount/eve-agent-runtime", "GCP_PROJECT: ", "YOUR_REGION: Deployment/eve-api",
-                      "apps.example.com: Deployment/eve-worker"):
-            self.assertIn(token, result.stderr)
+        found = reported(check(render(REPO / "k8s/overlays/gcp")).stderr)
+        # Each placeholder names every object that carries it, in render order,
+        # so check membership rather than position. Nested component files
+        # (org-fs) and the registry ingress must be covered too.
+        for token, obj in (("INSTANCE_PREFIX", "ServiceAccount/eve-agent-runtime"),
+                           ("INSTANCE_PREFIX", "StorageClass/filestore-rwx"),
+                           ("GCP_PROJECT", "ServiceAccount/eve-api"),
+                           ("YOUR_REGION", "Deployment/eve-api"),
+                           ("apps.example.com", "Deployment/eve-worker"),
+                           ("registry.eve.example.com", "Ingress/eve-registry")):
+            self.assertIn(obj, found.get(token, ()), f"{token} not reported on {obj}: {found}")
 
     def test_filled_gcp_overlay_passes(self):
         with tempfile.TemporaryDirectory() as tmp:

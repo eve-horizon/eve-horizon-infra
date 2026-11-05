@@ -460,11 +460,14 @@ chmod +x "$stub_bin/kubectl" "$stub_bin/curl"
 deploy_with_registry() {
   local overlay="$1" registry="$2" root="$work_root/deploy-$1-$2"
   mkdir -p "$root"
-  cp -R "$REPO_ROOT/bin" "$REPO_ROOT/config" "$REPO_ROOT/k8s" "$root/"
+  cp -R "$REPO_ROOT/bin" "$REPO_ROOT/config" "$REPO_ROOT/k8s" "$REPO_ROOT/scripts" "$root/"
   sed -i.bak -E "s/^overlay:.*/overlay: ${overlay}/" "$root/config/platform.yaml"
   : >"$root/config/kubeconfig.yaml"
   : >"$root/curl.log"
+  # The unfilled template overlay carries placeholders (the probed host is the
+  # template's registry.eve.example.com), so let deploy past that guard here.
   PATH="$stub_bin:$PATH" STUB_REGISTRY="$registry" STUB_CURL_LOG="$root/curl.log" \
+    EVE_ALLOW_PLACEHOLDERS=1 \
     "$root/bin/eve-infra" deploy --skip-migrate </dev/null >"$root/deploy.log" 2>&1
 }
 for overlay in gcp aws-eks; do
