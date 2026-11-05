@@ -24,6 +24,10 @@ KUBECONFIG_FILE="$REPO_ROOT/config/kubeconfig.yaml"
 NAMESPACE="eve"
 EVE_EFFECTIVE_CONTEXT=""
 
+# psql client for `db status` and `db connect` against a managed database:
+# postgres:17.11-alpine, pinned to its multi-arch index digest.
+PSQL_IMAGE="postgres:17.11-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73"
+
 # ---------------------------------------------------------------------------
 # Colors (disabled when stdout is not a terminal)
 # ---------------------------------------------------------------------------
@@ -710,6 +714,35 @@ cmd_db_migrate() {
   fi
 }
 
+# Pod overrides for a one-off psql pod against the managed database. The pod
+# gets DATABASE_URL alone from eve-app (not every platform secret), and turns
+# it into libpq environment variables before psql starts, so the URL never
+# appears in a process's arguments. $1 is the psql command line to exec.
+psql_pod_overrides() {
+  local psql_command="$1" tty="${2:-false}"
+  command -v jq &>/dev/null || die "jq is required for database commands."
+  # shellcheck disable=SC2016 # expanded by the pod's shell, not this one
+  local script='exec 2>&1
+set -eu
+: "${DATABASE_URL:?is not set in the eve-app secret}"
+pgenv="$(printf "%s" "$DATABASE_URL" | LC_ALL=C awk "$EVE_PG_ENV_AWK")"
+eval "$pgenv"
+unset DATABASE_URL EVE_PG_ENV_AWK pgenv
+'"exec $psql_command"
+  jq -n \
+    --arg image "$PSQL_IMAGE" \
+    --arg script "$script" \
+    --rawfile awk "$REPO_ROOT/scripts/pg-env-from-url.awk" \
+    --argjson tty "$tty" \
+    '{spec: {containers: [{
+        name: "psql", image: $image, stdin: true, tty: $tty,
+        command: ["sh", "-c", $script],
+        env: [
+          {name: "DATABASE_URL", valueFrom: {secretKeyRef: {name: "eve-app", key: "DATABASE_URL", optional: true}}},
+          {name: "EVE_PG_ENV_AWK", value: $awk}
+        ]}]}}'
+}
+
 cmd_db_status() {
   require_cluster_access read
 
@@ -722,9 +755,9 @@ cmd_db_status() {
   case "$provider" in
     rds|cloud-sql|external)
       local overrides
-      overrides='{"spec":{"containers":[{"name":"psql","image":"postgres:16-alpine","stdin":true,"command":["sh","-c"],"args":["psql \"$DATABASE_URL\" -tA -F\"|\" -c \"SELECT count(*), coalesce(max(name), '"'"'(none)'"'"') FROM _migrations;\" 2>&1 || echo \"ERROR\""],"envFrom":[{"secretRef":{"name":"eve-app"}}]}]}}'
+      overrides="$(psql_pod_overrides "psql -tA -F'|' -c \"SELECT count(*), coalesce(max(name), '(none)') FROM _migrations;\"")"
       local out
-      out="$(kube run eve-db-status --rm -i --image=postgres:16-alpine \
+      out="$(kube run eve-db-status --rm -i --image="$PSQL_IMAGE" \
         --namespace="$NAMESPACE" --restart=Never \
         --overrides="$overrides" 2>/dev/null || true)"
       local row
@@ -811,30 +844,19 @@ cmd_db_connect() {
       ;;
     rds|cloud-sql|external)
       # Port-forward through the API pod (which has DATABASE_URL) as a SOCKS proxy
-      # is complex; instead, run psql in a temporary pod with the same secret.
-      info "Launching psql in a temporary pod (using eve-app secret for DATABASE_URL)..."
+      # is complex; instead, run psql in a temporary pod that reads DATABASE_URL
+      # from the eve-app secret.
+      info "Launching psql in a temporary pod (DATABASE_URL from the eve-app secret)..."
       echo -e "${DIM}Press Ctrl+D or type \\q to exit.${RESET}"
       echo ""
+      local overrides
+      overrides="$(psql_pod_overrides psql true)"
       kube run eve-psql-session \
         --rm -it \
-        --image=postgres:16-alpine \
+        --image="$PSQL_IMAGE" \
         --namespace="$NAMESPACE" \
         --restart=Never \
-        --env="PGDATABASE=$db_name" \
-        --overrides='{
-          "spec": {
-            "containers": [{
-              "name": "psql",
-              "image": "postgres:16-alpine",
-              "stdin": true,
-              "tty": true,
-              "command": ["psql"],
-              "args": ["$(DATABASE_URL)"],
-              "envFrom": [{"secretRef": {"name": "eve-app"}}]
-            }]
-          }
-        }' \
-        -- psql 2>/dev/null \
+        --overrides="$overrides" 2>/dev/null \
         || die "Failed to launch psql session. Ensure the eve-app secret contains DATABASE_URL."
       ;;
     *)
