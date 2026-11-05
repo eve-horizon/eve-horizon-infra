@@ -6,9 +6,10 @@ Reads config/secrets.env and writes a v1 List of two Secrets on stdout, for
 
   eve-app       keys every Eve service loads with envFrom
   eve-api-keys  signing and encryption keys that only the API reads. Only the
-                API mounts it, so the worker, orchestrator, gateway, SSO and
-                agent runtime (and the job code running beside them) never
-                hold a key that could mint tokens or decrypt org secrets.
+                API mounts it; GoTrue reads SUPABASE_JWT_SECRET from it by
+                name. The worker, orchestrator, gateway, SSO and agent runtime
+                (and the job code running beside them) never hold a key that
+                could mint tokens or decrypt org secrets.
 
 It replaces `kubectl create secret --from-env-file`, which reads one
 KEY=VALUE per line and so cannot carry a multi-line PEM key.
@@ -35,7 +36,8 @@ APP_SECRET = "eve-app"
 API_SECRET = "eve-api-keys"
 
 # Keys only the API reads (checked against apps/*/src and packages/*/src of
-# eve-horizon). Anything not listed here stays in eve-app.
+# eve-horizon); GoTrue also reads SUPABASE_JWT_SECRET, by name. Anything not
+# listed here stays in eve-app.
 API_ONLY_KEYS = frozenset({
     "EVE_SECRETS_MASTER_KEY",        # decrypts every org and project secret
     "EVE_AUTH_PRIVATE_KEY",          # signs user, job and service tokens
@@ -45,6 +47,8 @@ API_ONLY_KEYS = frozenset({
     "EVE_ORG_FS_LINK_TOKEN_SECRET",  # signs org filesystem link tokens
     "EVE_GITHUB_WEBHOOK_SECRET",     # verifies GitHub webhook signatures
     "SUPABASE_AUTH_SERVICE_KEY",     # GoTrue service-role (admin) token
+    "SUPABASE_JWT_SECRET",           # HS256 secret; a token signed with it is
+                                     # linked to any user by its email claim
 })
 
 ENV_NAME = re.compile(r"[-._a-zA-Z][-._a-zA-Z0-9]*\Z")

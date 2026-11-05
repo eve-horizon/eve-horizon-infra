@@ -30,8 +30,9 @@ spec:
             - secretRef:
                 name: eve-app
             # Signing and encryption keys only the API reads. No other
-            # workload mounts this secret. Optional so a cluster can take
-            # these manifests before `eve-infra secrets sync` creates it.
+            # workload mounts this secret (GoTrue reads one key from it by
+            # name). Optional so a cluster can take these manifests before
+            # `eve-infra secrets sync` creates it.
             - secretRef:
                 name: eve-api-keys
                 optional: true

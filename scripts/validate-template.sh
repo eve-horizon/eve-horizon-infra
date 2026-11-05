@@ -62,15 +62,30 @@ for overlay in "${OVERLAYS[@]}"; do
   done
 
   # `eve-infra secrets sync` owns eve-app and eve-api-keys; a deploy must not
-  # overwrite them. Only the API may load eve-api-keys or its keys.
+  # overwrite them. Only the API loads eve-api-keys (envFrom); GoTrue
+  # (supabase-auth) reads SUPABASE_JWT_SECRET from it by name. No other
+  # workload may reference the secret or any of its keys.
   if rendered_objects_mentioning "$rendered" "kind: " | grep -Eqx 'Secret/(eve-app|eve-api-keys)'; then
     fail "$overlay render would overwrite a secret that secrets sync owns"
   fi
-  rendered_objects_mentioning "$rendered" "eve-api-keys" | grep -qx 'Deployment/eve-api' \
-    || fail "$overlay: eve-api does not load eve-api-keys"
+  envfrom_api_keys="$(awk '
+    function flush() { if (hit) print kind "/" name; kind = ""; name = ""; hit = 0; from = 0 }
+    /^---$/ { flush(); next }
+    /^kind: / { kind = $2 }
+    /^  name: / { name = $2 }
+    /^ *- secretRef:$/ { from = 1; next }
+    from && /^ *name: eve-api-keys$/ { hit = 1 }
+    { from = 0 }
+    END { flush() }' "$rendered")"
+  [[ "$envfrom_api_keys" == "Deployment/eve-api" ]] \
+    || fail "$overlay: only eve-api may load eve-api-keys with envFrom (found: ${envfrom_api_keys:-none})"
   for needle in eve-api-keys $API_ONLY_KEYS; do
-    holders="$(rendered_objects_mentioning "$rendered" "$needle" | grep -vx 'Deployment/eve-api' || true)"
-    [[ -z "$holders" ]] || fail "$overlay: $needle reaches more than the API: $holders"
+    allowed='Deployment/eve-api'
+    case "$needle" in
+      eve-api-keys | SUPABASE_JWT_SECRET) allowed='Deployment/(eve-api|supabase-auth)' ;;
+    esac
+    holders="$(rendered_objects_mentioning "$rendered" "$needle" | grep -Evx "$allowed" || true)"
+    [[ -z "$holders" ]] || fail "$overlay: $needle reaches more than the API and GoTrue: $holders"
   done
 
   upgrade_root="$work_root/upgrade-$overlay"

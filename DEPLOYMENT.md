@@ -101,8 +101,9 @@ Set at minimum:
 `bin/eve-infra secrets sync` (run by `scripts/setup.sh`) writes two Kubernetes
 secrets from this file: `eve-app`, which every Eve service loads, and
 `eve-api-keys`, which holds the keys marked `[API ONLY]` in the example (the
-secrets master key, the token-signing keys, the bootstrap token) and which
-only the API mounts. Multi-line values such as PEM keys must be wrapped in
+secrets master key, the token-signing keys including `SUPABASE_JWT_SECRET`,
+the bootstrap token) and which only the API mounts; GoTrue reads
+`SUPABASE_JWT_SECRET` from it by name. Multi-line values such as PEM keys must be wrapped in
 double quotes; `\n` inside double quotes is also read as a line break.
 
 LLM provider keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, etc.), Claude Code
