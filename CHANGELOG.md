@@ -446,6 +446,30 @@ cluster. The member strings are unchanged.
   - `DEPLOYMENT.md` — informational
   - `scripts/validate-template.sh` — template-only CI assertion
 
+### fix: run a current BuildKit by digest with GC sized to its cache volume
+
+- **Scope:** `k8s/base/buildkitd-deployment.yaml`, `k8s/base/buildkitd-pvc.yaml`
+  (comment), `scripts/validate-template.sh`
+- **Why:** BuildKit `v0.12.5` bundles a runc without the 2025
+  container-escape fixes, and it runs privileged. Its GC kept up to 12000 MB,
+  which overflows the cache volume as soon as an overlay shrinks it.
+- **What changed:** `moby/buildkit:v0.34.1` pinned by digest, and GC set as
+  `Reserved,MinFree,MaxUsed` = `2000,3000,15000` MB for the 20Gi
+  `buildkitd-cache` volume. Template CI fails if a render's BuildKit image is
+  not digest-pinned or its MinFree + MaxUsed does not fit the rendered cache
+  volume. Privileged mode is unchanged (rootless BuildKit is a separate
+  change).
+- **Sync impact:**
+  - `k8s/base/` — auto-sync safe, with two checks. If your overlay resizes
+    `buildkitd-cache`, scale the GC values to fit it (for a 10Gi volume,
+    `2000,1500,7500`). If your overlay overrides the BuildKit image, keep it at
+    v0.17 or newer: older releases do not accept the three-value
+    `--oci-worker-gc-keepstorage`. The image change rolls the buildkitd pod;
+    with a ReadWriteOnce cache, a replacement pod scheduled on another node
+    waits for the old pod to release the volume. If the rollout stalls, delete
+    the old `buildkitd` pod (the cache is disposable).
+  - `scripts/validate-template.sh` — template-only CI assertion
+
 ## [2026-08-25]
 
 ### fix: preserve migration safety and complete auth bootstrap overlays
