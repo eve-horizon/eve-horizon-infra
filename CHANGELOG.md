@@ -334,6 +334,7 @@ cluster. The member strings are unchanged.
 
 - **Scope:** `scripts/render-k8s-secrets.py` (new), `bin/eve-infra`,
   `scripts/setup.sh`, `k8s/base/api-deployment.yaml`, `k8s/base/app-secret.yaml`,
+  `k8s/base/supabase-auth-deployment.yaml`,
   `k8s/overlays/{aws,aws-eks}/api-deployment-patch.yaml`,
   `k8s/overlays/aws-eks/{kustomization.yaml,remove-app-secret.yaml}`,
   `config/secrets.env.example`, `DEPLOYMENT.md`, `README.md`,
@@ -349,9 +350,13 @@ cluster. The member strings are unchanged.
   `eve-api-keys` for the keys only the API reads (`EVE_SECRETS_MASTER_KEY`,
   `EVE_AUTH_PRIVATE_KEY`, `EVE_AUTH_JWT_SECRET`, `EVE_REGISTRY_SIGNING_KEY`,
   `EVE_BOOTSTRAP_TOKEN`, `EVE_ORG_FS_LINK_TOKEN_SECRET`,
-  `EVE_GITHUB_WEBHOOK_SECRET`, `SUPABASE_AUTH_SERVICE_KEY`). Only `eve-api`
-  mounts `eve-api-keys` (optional reference). The env file accepts
-  double-quoted multi-line values (and `\n` escapes inside double quotes);
+  `EVE_GITHUB_WEBHOOK_SECRET`, `SUPABASE_AUTH_SERVICE_KEY`,
+  `SUPABASE_JWT_SECRET`). Only `eve-api` mounts `eve-api-keys` (optional
+  reference); GoTrue reads `SUPABASE_JWT_SECRET` from it by name, because
+  the API accepts any token signed with that secret and links it to a user
+  by email. `SUPABASE_ANON_KEY` is public by design and stays in `eve-app`.
+  The env file accepts double-quoted multi-line values (and `\n` escapes
+  inside double quotes);
   unquoted values are read verbatim as before. The example documents
   `EVE_AUTH_PRIVATE_KEY` with a generation command, marks the API-only keys,
   and moves LLM and GitHub keys to Eve org secrets. The aws-eks overlay no
@@ -364,7 +369,10 @@ cluster. The member strings are unchanged.
     (moves the API-only keys out of `eve-app`), then restart services so they
     drop the old values. `secrets sync` refuses to run until the live
     `eve-api` Deployment loads `eve-api-keys`, so the keys cannot vanish from
-    the API on a restart. `secrets sync` now needs `python3`.
+    the API on a restart, and also until GoTrue reads `GOTRUE_JWT_SECRET`
+    from `eve-api-keys`. Between that deploy and the sync, GoTrue's new pod
+    waits for `eve-api-keys` while the old pod keeps serving; the sync lets it
+    start. `secrets sync` now needs `python3`.
   - `config/secrets.env` — no edit needed for single-line values. Values that
     start with a quote are now unquoted (`KEY="v"` gives `v`, where kubectl
     kept the quotes); a value that opens a quote must close it at the end of
@@ -377,8 +385,9 @@ cluster. The member strings are unchanged.
   - `config/secrets.env.example`, `DEPLOYMENT.md`, `skills/eve-infra-ops/` —
     informational
   - `scripts/validate-template.sh`, `tests/` — template CI: renders must not
-    contain `eve-app`/`eve-api-keys`, and only `eve-api` may reference
-    `eve-api-keys` or an API-only key
+    contain `eve-app`/`eve-api-keys`, only `eve-api` may load `eve-api-keys`,
+    and no workload but `eve-api` (and `supabase-auth`, for
+    `SUPABASE_JWT_SECRET` alone) may reference it or an API-only key
 
 ### ci: run the template contract check only in the canonical template
 

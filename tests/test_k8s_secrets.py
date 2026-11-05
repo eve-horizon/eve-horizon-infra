@@ -121,6 +121,15 @@ class RenderTest(unittest.TestCase):
             "EVE_REGISTRY_SIGNING_KEY": PEM, "EVE_BOOTSTRAP_TOKEN": "boot",
         })
 
+    def test_supabase_signing_material_leaves_eve_app_but_the_anon_key_stays(self):
+        values = {"SUPABASE_JWT_SECRET": "hs256", "SUPABASE_AUTH_SERVICE_KEY": "service-role",
+                  "SUPABASE_ANON_KEY": "anon", "SUPABASE_AUTH_URL": "http://supabase-auth:9999"}
+        manifest = renderer.render(values, "eve")
+        self.assertEqual(decoded(manifest, "eve-api-keys"),
+                         {"SUPABASE_JWT_SECRET": "hs256", "SUPABASE_AUTH_SERVICE_KEY": "service-role"})
+        self.assertEqual(decoded(manifest, "eve-app"),
+                         {"SUPABASE_ANON_KEY": "anon", "SUPABASE_AUTH_URL": "http://supabase-auth:9999"})
+
     def test_both_secrets_render_even_when_one_is_empty(self):
         manifest = renderer.render({"EVE_INTERNAL_API_KEY": "internal"}, "eve")
         self.assertEqual(decoded(manifest, "eve-api-keys"), {})
@@ -172,6 +181,9 @@ case "$*" in
   *"get deployment eve-api"*)
     if [[ -n "${STUB_API_REFS+x}" ]]; then printf '%s' "$STUB_API_REFS"; else
       echo 'Error from server (NotFound): deployments.apps "eve-api" not found' >&2; exit 1; fi ;;
+  *"get deployment supabase-auth"*)
+    if [[ -n "${STUB_GOTRUE_REF+x}" ]]; then printf '%s' "$STUB_GOTRUE_REF"; else
+      echo 'Error from server (NotFound): deployments.apps "supabase-auth" not found' >&2; exit 1; fi ;;
   *"apply -f -"*) cat > "$STUB_DIR/applied.json" ;;
   *) echo "unexpected kubectl call: $*" >&2; exit 2 ;;
 esac
@@ -197,12 +209,16 @@ class SecretsSyncTest(unittest.TestCase):
         self.env = {**os.environ, "STUB_DIR": str(self.stub), "PATH": f"{self.stub}{os.pathsep}{os.environ['PATH']}"}
         self.env.pop("KUBECONFIG", None)
         self.env.pop("STUB_API_REFS", None)
+        self.env.pop("STUB_GOTRUE_REF", None)
 
-    def sync(self, secrets_text, api_refs=None):
+    def sync(self, secrets_text, api_refs=None, gotrue_ref=None):
         (self.root / "config/secrets.env").write_text(secrets_text)
+        (self.stub / "applied.json").unlink(missing_ok=True)
         env = dict(self.env)
         if api_refs is not None:
             env["STUB_API_REFS"] = api_refs
+        if gotrue_ref is not None:
+            env["STUB_GOTRUE_REF"] = gotrue_ref
         return subprocess.run([str(self.root / "bin/eve-infra"), "secrets", "sync"],
                               capture_output=True, text=True, env=env)
 
@@ -227,12 +243,61 @@ class SecretsSyncTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIsNotNone(self.applied())
 
+    def test_split_waits_for_gotrue_to_read_the_jwt_secret_from_eve_api_keys(self):
+        text = "SUPABASE_JWT_SECRET=hs256\n"
+        result = self.sync(text, api_refs="eve-app eve-api-keys", gotrue_ref="eve-app")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("supabase-auth still reads GOTRUE_JWT_SECRET from 'eve-app'", result.stderr)
+        self.assertIsNone(self.applied())
+        result = self.sync(text, api_refs="eve-app eve-api-keys", gotrue_ref="eve-api-keys")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(decoded(self.applied(), "eve-api-keys"), {"SUPABASE_JWT_SECRET": "hs256"})
+
     def test_malformed_file_never_reaches_kubectl(self):
         result = self.sync(f"EVE_AUTH_PRIVATE_KEY={PEM}\n")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("no secret was changed", result.stderr)
         self.assertNotIn("AAAAtestonly", result.stdout + result.stderr)
         self.assertIsNone(self.applied())
+
+
+KUBECTL = shutil.which("kubectl")
+
+
+def rendered_objects(overlay):
+    """Map "Kind/name" to document text for one rendered overlay."""
+    text = subprocess.run([KUBECTL, "kustomize", str(REPO / "k8s/overlays" / overlay)],
+                          check=True, capture_output=True, text=True).stdout
+    objects = {}
+    for doc in text.split("\n---\n"):
+        kind = re.search(r"^kind: (\S+)$", doc, re.MULTILINE)
+        name = re.search(r"^metadata:\n(?:  \S.*\n|    .*\n)*?  name: (\S+)$", doc, re.MULTILINE)
+        if kind and name:
+            objects[f"{kind.group(1)}/{name.group(1)}"] = doc
+    return objects
+
+
+@unittest.skipUnless(KUBECTL, "kubectl not installed")
+class RenderedOverlayTest(unittest.TestCase):
+    """No workload but the API (and GoTrue, for its one key) sees the API-only keys."""
+
+    def test_api_only_keys_reach_only_the_api_and_gotrue(self):
+        for overlay in ("aws", "aws-eks", "gcp"):
+            objects = rendered_objects(overlay)
+            with self.subTest(overlay=overlay):
+                loaders = sorted(n for n, d in objects.items()
+                                 if re.search(r"- secretRef:\n\s+name: eve-api-keys$", d, re.MULTILINE))
+                self.assertEqual(loaders, ["Deployment/eve-api"])
+                for needle in sorted(renderer.API_ONLY_KEYS | {"eve-api-keys"}):
+                    allowed = {"Deployment/eve-api"}
+                    if needle in ("eve-api-keys", "SUPABASE_JWT_SECRET"):
+                        allowed.add("Deployment/supabase-auth")
+                    holders = {n for n, d in objects.items() if needle in d}
+                    self.assertLessEqual(holders, allowed, needle)
+                gotrue = objects["Deployment/supabase-auth"]
+                self.assertRegex(gotrue, r"- name: GOTRUE_JWT_SECRET\n\s+valueFrom:\n\s+secretKeyRef:\n"
+                                         r"\s+key: SUPABASE_JWT_SECRET\n\s+name: eve-api-keys\n")
+                self.assertNotIn("SUPABASE_AUTH_SERVICE_KEY", gotrue)
 
 
 if __name__ == "__main__":

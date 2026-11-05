@@ -635,18 +635,27 @@ cmd_deploy() {
   ok "Deploy complete."
 }
 
-# The API reads its signing and encryption keys from eve-api-keys. Once
-# secrets sync moves them out of eve-app, an eve-api Deployment that predates
-# the split would start without them on its next restart, so require the new
-# manifests first. A missing Deployment means first-time setup.
-assert_api_mounts_api_keys() {
+# The API reads its signing and encryption keys from eve-api-keys, and GoTrue
+# reads SUPABASE_JWT_SECRET from it. Once secrets sync moves those keys out of
+# eve-app, a Deployment that predates the split would start without them on
+# its next restart, so require the new manifests first. A missing Deployment
+# means first-time setup.
+assert_live_manifests_read_api_keys() {
   local refs
-  refs="$(kube get deployment eve-api -n "$NAMESPACE" \
-    -o jsonpath='{.spec.template.spec.containers[*].envFrom[*].secretRef.name}' 2>/dev/null)" || return 0
-  [[ " $refs " == *" eve-api-keys "* ]] && return 0
-  die "deployment/eve-api does not load the 'eve-api-keys' secret yet, and this sync moves
+  if refs="$(kube get deployment eve-api -n "$NAMESPACE" \
+    -o jsonpath='{.spec.template.spec.containers[*].envFrom[*].secretRef.name}' 2>/dev/null)" \
+    && [[ " $refs " != *" eve-api-keys "* ]]; then
+    die "deployment/eve-api does not load the 'eve-api-keys' secret yet, and this sync moves
   the API's signing keys out of 'eve-app'. Run 'eve-infra deploy' first (the new
   reference is optional, so it is safe before the secret exists), then sync again."
+  fi
+  if refs="$(kube get deployment supabase-auth -n "$NAMESPACE" \
+    -o jsonpath='{.spec.template.spec.containers[*].env[?(@.name=="GOTRUE_JWT_SECRET")].valueFrom.secretKeyRef.name}' 2>/dev/null)" \
+    && [[ -n "$refs" && "$refs" != "eve-api-keys" ]]; then
+    die "deployment/supabase-auth still reads GOTRUE_JWT_SECRET from '${refs}', and this sync
+  moves SUPABASE_JWT_SECRET to 'eve-api-keys'. Run 'eve-infra deploy' first, then sync
+  again (GoTrue's new pod waits for the secret; the old pod keeps serving)."
+  fi
 }
 
 cmd_secrets_sync() {
@@ -659,7 +668,7 @@ cmd_secrets_sync() {
   fi
   command -v python3 &>/dev/null || die "python3 is required to render secrets."
 
-  assert_api_mounts_api_keys
+  assert_live_manifests_read_api_keys
 
   info "Syncing config/secrets.env -> secrets 'eve-app' and 'eve-api-keys' in namespace '${NAMESPACE}'..."
 
