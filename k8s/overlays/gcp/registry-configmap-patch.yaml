@@ -1,0 +1,27 @@
+# Eve-native registry on GKE: images on the eve-registry-data volume, token
+# auth against the API. Set the realm to https://<api_host>/internal/registry/token.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: eve-registry-config
+  namespace: eve
+data:
+  config.yml: |
+    version: 0.1
+    log:
+      level: info
+    storage:
+      filesystem:
+        rootdirectory: /var/lib/registry
+      cache:
+        blobdescriptor: inmemory
+      delete:
+        enabled: true
+    http:
+      addr: :5000
+    auth:
+      token:
+        realm: https://api.eve.example.com/internal/registry/token
+        service: eve-registry
+        issuer: eve-api
+        rootcertbundle: /etc/registry/signing-cert.pem

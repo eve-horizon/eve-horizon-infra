@@ -179,6 +179,8 @@ bin/eve-infra health
 
 The deploy command builds manifests from `k8s/overlays/<overlay>/` (`overlay` from `config/platform.yaml`, falling back to `cloud`) and applies them to the cluster, then waits for rollouts to complete.
 
+On overlays that run the Eve-native registry for app images (`gcp`, `aws-eks`), deploy then checks that `https://<registry host>/v2/` answers `401` with a `WWW-Authenticate: Bearer realm=` challenge, and fails if it does not: a registry that misses its token-auth config would let anyone push and pull. The host comes from the overlay's `eve-registry` ingress. Keep it, the `realm` in the overlay's `registry-configmap-patch.yaml` (`https://<api_host>/internal/registry/token`) and `EVE_REGISTRY_HOST` in `secrets.env` in step. The registry trusts tokens signed by `EVE_REGISTRY_SIGNING_KEY` (an RSA key); `scripts/setup.sh` loads the matching certificate into the `eve-registry-cert` secret from `REGISTRY_SIGNING_CERT_PATH`. On a first install, before DNS and a certificate exist for the registry host, run `bin/eve-infra deploy --skip-registry-check` once, then deploy again without it.
+
 ### 8. Verify
 
 ```bash
@@ -389,6 +391,15 @@ Common causes:
 - `DATABASE_URL` is wrong or the database is unreachable
 - Missing required secrets (`EVE_SECRETS_MASTER_KEY`, `EVE_INTERNAL_API_KEY`)
 - Database migrations have not been run (`bin/eve-infra db migrate`)
+
+### Deploy Fails the Registry Auth Check
+
+`bin/eve-infra deploy` stops when the registry does not demand a bearer token.
+
+- **HTTP 200:** the registry is serving without its token-auth config, so anyone can push and pull. Check that the `eve-registry` container's `args` name the file its config volume provides (`/etc/distribution/config.yml` in the base) and that `scripts/validate-template.sh` passes on your overlays.
+- **502 or 503:** the registry pod is not ready, often because the `eve-registry-cert` secret is missing (`kubectl -n eve describe pod -l app.kubernetes.io/name=eve-registry`).
+- **No response or a TLS error:** DNS or the certificate for the registry host is not ready yet (see the next section). Deploy with `--skip-registry-check` until it is, then deploy again without it.
+- **401 without a `Bearer` challenge:** something other than the Eve registry answers on that host. Check the `eve-registry` ingress.
 
 ### TLS Certificate Not Issuing
 

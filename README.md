@@ -63,7 +63,7 @@ eve-horizon-infra/
 │   └── overlays/
 │       ├── aws/               # AWS-specific patches (k3s + RDS wiring)
 │       ├── aws-eks/           # AWS EKS patches (nginx ingress + registry)
-│       └── gcp/               # GCP-specific patches (GKE + Cloud SQL wiring)
+│       └── gcp/               # GCP-specific patches (GKE + Cloud SQL wiring + registry)
 ├── terraform/
 │   ├── aws/                   # AWS root module (k3s or EKS, RDS, Route53)
 │   │   ├── providers.tf

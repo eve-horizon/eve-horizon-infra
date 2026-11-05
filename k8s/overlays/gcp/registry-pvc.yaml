@@ -1,0 +1,17 @@
+# Image storage for the Eve-native registry. No storageClassName: like the
+# BuildKit cache, it uses the cluster's default ReadWriteOnce class (GKE
+# standard-rwo). The registry Deployment uses the Recreate strategy so a
+# rollout never needs the disk attached to two nodes at once.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: eve-registry-data
+  namespace: eve
+  labels:
+    app.kubernetes.io/name: eve-registry
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
