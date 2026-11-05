@@ -288,6 +288,30 @@ cluster. The member strings are unchanged.
     Filestore network and size, and renders the disk profile
   - `CLAUDE.md` — manual merge; adds the org filesystem cost table
 
+### fix: drop the unread agent_runtime settings; show the always-on agents node
+
+- **Scope:** `config/platform.yaml`, `CLAUDE.md`,
+  `terraform/gcp/terraform.tfvars.example`, `scripts/validate-template.sh`
+- **Why:** `agent_runtime.replicas` and `agent_runtime.capacity` in
+  `platform.yaml` were read by nothing; the overlays set the agent runtime's
+  replicas and `AGENT_RUNTIME_CAPACITY`. Honouring the key now would silently
+  change running instances: the template default says 3 while the `aws`
+  overlay deploys 1, and `platform.yaml` is never synced, so every k3s instance
+  would jump to 3 runtimes on one host. The orchestrator's
+  `EVE_AGENT_RUNTIME_URLS` also names each pod, so a count above 3 needs more
+  than a replica number. The keys are replaced by a comment that points at the
+  overlay. The sizing docs now say the agents pool always keeps one node,
+  because the agent runtime and BuildKit are pinned to it.
+- **Sync impact:**
+  - `config/platform.yaml` — never-synced; nothing changes for existing
+    instances. You may delete `agent_runtime:` from your copy; it was never read.
+  - `CLAUDE.md`, `terraform/gcp/terraform.tfvars.example` — manual merge; docs
+    and comments only
+  - `scripts/validate-template.sh` — auto-sync safe; fails if an overlay runs an
+    agent runtime replica that `EVE_AGENT_RUNTIME_URLS` does not map. A
+    downstream overlay that raised replicas without extending the map will now
+    fail validation, which is the point: work routed to that pod was failing.
+
 ## [2026-08-25]
 
 ### fix: preserve migration safety and complete auth bootstrap overlays

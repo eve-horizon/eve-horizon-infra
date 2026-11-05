@@ -170,13 +170,14 @@ observability:
 # Agent Runtime
 # -----------------------------------------------------------------------------
 
-agent_runtime:
-  # Number of agent-runtime StatefulSet replicas.
-  # Each replica can handle `capacity` concurrent agent sessions.
-  replicas: 3                           # [OPTIONAL] Default 3
-
-  # Max concurrent agent sessions per replica.
-  capacity: 8                           # [OPTIONAL] Default 8
+# Not configured here: nothing reads platform.yaml for the agent runtime. Set
+# it in the overlay instead (k8s/overlays/<overlay>/):
+#   - replicas: `spec.replicas` on the eve-agent-runtime StatefulSet (base 3;
+#     the aws overlay runs 1). Above 3, also add each new pod to
+#     EVE_AGENT_RUNTIME_URLS on the orchestrator, or work routed to it fails.
+#   - capacity: AGENT_RUNTIME_CAPACITY, concurrent sessions per replica (8).
+# On GKE and EKS the runtime is pinned to the agents node pool, so that pool
+# always runs at least one node (see "Cost Management" in CLAUDE.md).
 
 # -----------------------------------------------------------------------------
 # Ollama GPU Inference (optional)
