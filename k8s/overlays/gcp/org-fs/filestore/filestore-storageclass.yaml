@@ -1,0 +1,14 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: filestore-rwx
+provisioner: filestore.csi.storage.gke.io
+parameters:
+  tier: standard
+  # The VPC that terraform/gcp creates (<name_prefix>-vpc). A project built by
+  # that root has no network called "default", so provisioning fails there.
+  # StorageClass parameters are immutable: on a running instance, keep the
+  # value its live filestore-rwx class already has.
+  network: INSTANCE_PREFIX-vpc
+volumeBindingMode: Immediate
+allowVolumeExpansion: true

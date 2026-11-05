@@ -84,4 +84,33 @@ for overlay in "${OVERLAYS[@]}"; do
   done
 done
 
+# GCP org filesystem profiles (k8s/overlays/gcp/org-fs/). The default puts a
+# 100 GiB Filestore share on the VPC Terraform creates; Filestore cannot reach
+# a "default" network there, and a bare 5Gi claim can provision 1 TiB.
+gcp_render="$work_root/gcp.yaml"
+grep -Fxq '  network: INSTANCE_PREFIX-vpc' "$gcp_render" \
+  || fail "gcp Filestore StorageClass is not on the <name_prefix>-vpc network"
+grep -Fxq '  storageClassName: filestore-rwx' "$gcp_render" \
+  || fail "gcp org filesystem claim does not use Filestore by default"
+grep -Fxq '      storage: 100Gi' "$gcp_render" \
+  || fail "gcp org filesystem claim does not request 100Gi of Filestore"
+
+# The "disk" profile: one RWO disk, no Filestore, agent runtimes on one node.
+disk_root="$work_root/gcp-org-fs-disk"
+mkdir -p "$disk_root"
+cp -R "$REPO_ROOT/k8s" "$disk_root/"
+sed -i.bak -E \
+  -e '/^  - org-fs\/filestore/d' \
+  -e 's|^  # - org-fs/disk|  - org-fs/disk|' \
+  "$disk_root/k8s/overlays/gcp/kustomization.yaml"
+disk_render="$work_root/gcp-org-fs-disk.yaml"
+kubectl kustomize "$disk_root/k8s/overlays/gcp" >"$disk_render"
+grep -Fxq '  storageClassName: standard-rwo' "$disk_render" \
+  || fail "gcp disk profile does not put the org filesystem on standard-rwo"
+if grep -Eq 'ReadWriteMany|name: filestore-rwx' "$disk_render"; then
+  fail "gcp disk profile still renders Filestore or a ReadWriteMany claim"
+fi
+grep -Fxq '            topologyKey: kubernetes.io/hostname' "$disk_render" \
+  || fail "gcp disk profile does not keep agent runtimes on one node"
+
 echo "Template validation passed: 3 overlays, 7 services, migration, and scrub checks."
