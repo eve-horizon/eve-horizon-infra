@@ -418,6 +418,43 @@ for overlay in aws-eks gcp; do
     || fail "$overlay registry ingress must be nginx with TLS and no body-size limit"
 done
 
+# Every public host on GCP serves HTTPS: the registry's token realm and every
+# client reach the API over TLS. One line per fact: host, tls, class, issuer.
+# shellcheck disable=SC2016  # a Go template, not shell
+readonly INGRESS_TLS_FACTS='{{if eq .kind "Ingress"}}{{$n := .metadata.name}}
+{{- range .spec.rules}}host {{$n}} {{.host}}
+{{end}}{{range .spec.tls}}{{$s := .secretName}}{{range .hosts}}tls {{$n}} {{.}} {{$s}}
+{{end}}{{end}}{{with .spec.ingressClassName}}class {{$n}} {{.}}
+{{end}}{{with .metadata.annotations}}{{with index . "kubernetes.io/ingress.class"}}class {{$n}} {{.}}
+{{end}}{{with index . "cert-manager.io/cluster-issuer"}}issuer {{$n}} {{.}}
+{{end}}{{end}}{{end}}'
+
+# Print each Ingress host served without TLS or off the nginx class, and each
+# certificate secret no Ingress asks cert-manager to issue.
+ingress_tls_problems() {
+  render_query "$1" "$INGRESS_TLS_FACTS" | awk '
+    $1 == "host"   { host[$2 " " $3] = 1 }
+    $1 == "tls"    { secret[$2 " " $3] = $4; uses[$2] = uses[$2] " " $4 " " }
+    $1 == "class"  { if ($3 == "nginx") nginx[$2] = 1 }
+    $1 == "issuer" { issuer[$2] = $3 }
+    END {
+      for (h in host) {
+        split(h, part, " ")
+        if (!(h in secret) || secret[h] == "") print "Ingress " part[1] " serves " part[2] " without TLS"
+        if (!(part[1] in nginx)) print "Ingress " part[1] " is not on the nginx class"
+      }
+      for (h in secret) {
+        issued = 0
+        for (n in issuer) if (index(uses[n], " " secret[h] " ")) issued = 1
+        if (!issued) print "TLS secret " secret[h] " for " h " has no cert-manager issuer"
+      }
+    }'
+}
+problems="$(ingress_tls_problems "$work_root/gcp.yaml")"
+[[ -z "$problems" ]] || fail "gcp ingress TLS: $problems"
+[[ "$(render_query "$work_root/gcp.yaml" "$INGRESS_TLS_FACTS" | grep -c '^host ')" -ge 6 ]] \
+  || fail "gcp ingress TLS check saw fewer hosts than the overlay publishes"
+
 # The config-path guard itself must catch a registry that would run unauthenticated.
 registry_fixture() {
   local image="$1" mount_path="$2" args_flow="${3:-}"
