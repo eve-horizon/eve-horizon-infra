@@ -39,9 +39,16 @@ ingress policies for those services, runner pods and mailpit.
     `false`, the NetworkPolicies are inert until the cluster is rebuilt
     (`terraform apply -replace=module.gke.google_container_cluster.main`,
     a full rebuild with downtime: redeploy the platform and apps after).
+  - `terraform/gcp/modules/gke/` also sets `service_external_ips_config {
+    enabled = false }` (new `allow_service_external_ips`, default `false`):
+    Services may no longer claim `spec.externalIPs` (CVE-2020-8554). The
+    provider updates this in place, so existing clusters show an in-place
+    update, not a replacement. **Action required** only if one of your
+    Services uses `externalIPs`: set `allow_service_external_ips = true`.
   - `terraform/gcp/{main,variables,outputs}.tf`, `terraform.tfvars.example` —
-    manual merge (pass `enable_dataplane_v2` through and expose
-    `network_policy_enforced`; the module default applies if you skip it).
+    manual merge (pass `enable_dataplane_v2` and `allow_service_external_ips`
+    through and expose `network_policy_enforced`; the module defaults apply
+    if you skip it).
   - `k8s/overlays/gcp/` — manual merge. Ingress only: the API and
     orchestrator may call the worker; the orchestrator, API and worker the
     agent runtime; the API and worker the orchestrator; the worker and agent

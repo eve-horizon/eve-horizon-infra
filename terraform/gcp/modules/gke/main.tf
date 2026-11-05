@@ -28,6 +28,12 @@ resource "google_container_cluster" "main" {
   # this from ever replacing an existing cluster; see network_policy_enforced.
   datapath_provider = var.enable_dataplane_v2 ? "ADVANCED_DATAPATH" : null
 
+  # Refuse Service spec.externalIPs cluster-wide (CVE-2020-8554: a Service
+  # can claim any IP and intercept traffic to it). Updated in place.
+  service_external_ips_config {
+    enabled = var.allow_service_external_ips
+  }
+
   ip_allocation_policy {
     cluster_secondary_range_name  = var.pods_range_name
     services_secondary_range_name = var.services_range_name

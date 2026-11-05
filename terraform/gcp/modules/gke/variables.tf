@@ -106,3 +106,9 @@ variable "enable_dataplane_v2" {
   type        = bool
   default     = true
 }
+
+variable "allow_service_external_ips" {
+  description = "Allow Services to set spec.externalIPs (CVE-2020-8554). Off by default; changing it updates the cluster in place."
+  type        = bool
+  default     = false
+}

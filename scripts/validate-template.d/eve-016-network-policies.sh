@@ -62,3 +62,11 @@ grep -Eq '^    ignore_changes += \[.*\bdatapath_provider\b.*\]$' "$gke_module" \
 awk '/^variable "enable_dataplane_v2"/ { v = 1 } v && /default += true/ { found = 1 } v && /^}/ { v = 0 }
   END { exit !found }' "$REPO_ROOT/terraform/gcp/modules/gke/variables.tf" \
   || fail "new GKE clusters must default to Dataplane V2"
+
+# Service externalIPs (CVE-2020-8554) are off unless an instance opts in.
+awk '/^  service_external_ips_config \{/ { b = 1 } b && /enabled += var\.allow_service_external_ips$/ { ok = 1 }
+  b && /^  \}/ { b = 0 } END { exit !ok }' "$gke_module" \
+  || fail "GKE module must set service_external_ips_config from allow_service_external_ips"
+awk '/^variable "allow_service_external_ips"/ { v = 1 } v && /default += false/ { found = 1 } v && /^}/ { v = 0 }
+  END { exit !found }' "$REPO_ROOT/terraform/gcp/modules/gke/variables.tf" \
+  || fail "GKE clusters must refuse Service externalIPs by default"

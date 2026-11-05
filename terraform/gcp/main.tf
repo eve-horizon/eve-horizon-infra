@@ -94,6 +94,8 @@ module "gke" {
   allowed_api_cidrs         = var.allowed_api_cidrs
   service_account_email     = google_service_account.gke_nodes.email
   enable_dataplane_v2       = var.enable_dataplane_v2
+
+  allow_service_external_ips = var.allow_service_external_ips
 }
 
 # -----------------------------------------------------------------------------
