@@ -26,6 +26,7 @@ resources:
   - orchestrator-service.yaml
   - orchestrator-rbac.yaml
   - worker-rbac.yaml
+  - runner-serviceaccount.yaml
   - worker-deployment.yaml
   - worker-service.yaml
   - agent-runtime-pvc.yaml
