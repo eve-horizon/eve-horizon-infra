@@ -191,3 +191,18 @@ resource "google_storage_bucket" "eve_internal" {
     enabled = true
   }
 }
+
+# Managed-database snapshots (EVE_DB_SNAPSHOT_BUCKET on api and orchestrator).
+# Without that setting Eve writes to "<EVE_DEPLOYMENT_ID>-db-snapshots"
+# (default "eve-local-db-snapshots"), which nothing creates and which falls
+# outside the grants above. Not versioned: Eve prunes expired snapshots itself
+# and deleted dumps should not linger.
+resource "google_storage_bucket" "db_snapshots" {
+  name     = "${local.bucket_prefix}-db-snapshots"
+  location = var.location
+  project  = var.project_id
+
+  storage_class               = "STANDARD"
+  uniform_bucket_level_access = true
+  public_access_prevention    = "enforced"
+}

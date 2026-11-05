@@ -22,3 +22,8 @@ output "app_bucket_prefix" {
   description = "Prefix for per-app GCS buckets (EVE_STORAGE_APP_BUCKET_PREFIX on the worker)"
   value       = local.app_bucket_prefix
 }
+
+output "db_snapshot_bucket_name" {
+  description = "Name of the managed-database snapshot bucket (EVE_DB_SNAPSHOT_BUCKET on api and orchestrator)"
+  value       = google_storage_bucket.db_snapshots.name
+}

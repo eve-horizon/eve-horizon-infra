@@ -133,6 +133,11 @@ run "platform_account_is_limited_to_eve_buckets" {
     condition     = output.app_bucket_prefix == "eve-test-eve-app" && output.org_bucket_prefix == "eve-test-eve-org"
     error_message = "App and org buckets must have distinct prefixes under <name_prefix>-eve."
   }
+
+  assert {
+    condition     = google_storage_bucket.db_snapshots.name == "eve-test-eve-db-snapshots" && google_storage_bucket.db_snapshots.public_access_prevention == "enforced"
+    error_message = "Managed-database snapshots need a private bucket inside the <name_prefix>-eve- prefix."
+  }
 }
 
 run "agent_runtime_has_its_own_read_only_account" {

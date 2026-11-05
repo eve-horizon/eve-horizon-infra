@@ -132,6 +132,11 @@ gcp_worker="$(resource_doc Deployment eve-worker "$gcp_render")"
 [[ "$(env_value EVE_STORAGE_APP_BUCKET_PREFIX <<<"$gcp_worker")" == "INSTANCE_PREFIX-eve-app" ]] \
   || fail "gcp worker must set EVE_STORAGE_APP_BUCKET_PREFIX=INSTANCE_PREFIX-eve-app, apart from org buckets"
 
+for deployment in eve-api eve-orchestrator; do
+  [[ "$(resource_doc Deployment "$deployment" "$gcp_render" | env_value EVE_DB_SNAPSHOT_BUCKET)" == "INSTANCE_PREFIX-eve-db-snapshots" ]] \
+    || fail "gcp $deployment must set EVE_DB_SNAPSHOT_BUCKET=INSTANCE_PREFIX-eve-db-snapshots"
+done
+
 bucket_settings=0
 while read -r bucket_setting; do
   [[ "$bucket_setting" == INSTANCE_PREFIX-eve-* ]] \
@@ -141,6 +146,6 @@ done < <(
   grep -A1 -E '^ *- name: EVE_(STORAGE_[A-Z_]*BUCKET[A-Z_]*|DB_SNAPSHOT_BUCKET)$' "$gcp_render" \
     | sed -n 's/^ *value: //p' | tr -d '"'
 )
-((bucket_settings >= 4)) || fail "gcp render lost its storage bucket settings"
+((bucket_settings >= 6)) || fail "gcp render lost its storage bucket settings"
 
 echo "Template validation passed: 3 overlays, 7 services, migration, GCP storage identity, and scrub checks."

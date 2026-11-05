@@ -14,6 +14,7 @@ other way fails with `403`.
 | Bucket | Name | Set on | Created by |
 |---|---|---|---|
 | Internal | `<name_prefix>-eve-internal` | `EVE_STORAGE_INTERNAL_BUCKET` (api, worker) | this module |
+| DB snapshots | `<name_prefix>-eve-db-snapshots` | `EVE_DB_SNAPSHOT_BUCKET` (api, orchestrator) | this module |
 | Org | `<name_prefix>-eve-org-<org>` | `EVE_STORAGE_ORG_BUCKET_PREFIX` (api, worker, agent-runtime) | API, on first use |
 | App | `<name_prefix>-eve-app-<org>-<project>-<env>-<bucket>` | `EVE_STORAGE_APP_BUCKET_PREFIX` (worker) | worker, on deploy |
 
@@ -91,9 +92,10 @@ project and bound `eve-agent-runtime` to the platform account. To upgrade:
    `<name_prefix>-eve-` (the template's defaults are). Any other bucket loses
    access when the old grant goes.
 2. Edit the overlay, but do not deploy it yet: point the `eve-agent-runtime`
-   annotation at `<name_prefix>-eve-agents@<project>.iam.gserviceaccount.com`
-   and add `EVE_STORAGE_APP_BUCKET_PREFIX` to the worker (see "Bucket names"
-   if apps already have buckets).
+   annotation at `<name_prefix>-eve-agents@<project>.iam.gserviceaccount.com`,
+   add `EVE_STORAGE_APP_BUCKET_PREFIX` to the worker (see "Bucket names" if
+   apps already have buckets), and add `EVE_DB_SNAPSHOT_BUCKET` to the api and
+   orchestrator.
 3. `terraform apply`. It creates the agent runtime account and the new
    roles, adds the scoped operator grant before it removes
    `roles/storage.admin` (the `moved` block turns this into a

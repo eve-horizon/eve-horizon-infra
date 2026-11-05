@@ -9,6 +9,28 @@ Each entry includes **Sync impact** to guide what downstream agents need to do.
 
 ## [2026-11-05]
 
+### fix: give GCP managed-database snapshots a bucket inside the Eve prefix
+
+The GCP overlay never set `EVE_DB_SNAPSHOT_BUCKET`, so Eve wrote managed-DB
+snapshots to `eve-local-db-snapshots`, which nothing creates and which sits
+outside the scoped storage grants. The storage module now creates
+`<name_prefix>-eve-db-snapshots` (private, not versioned), and the GCP api and
+orchestrator point `EVE_DB_SNAPSHOT_BUCKET` at it. The agent runtime cannot
+read it.
+
+- **Scope:** `terraform/gcp/modules/storage/`, `terraform/gcp/outputs.tf`,
+  `k8s/overlays/gcp/api-deployment-patch.yaml`,
+  `k8s/overlays/gcp/orchestrator-deployment-patch.yaml`,
+  `scripts/validate-template.sh`, `terraform/gcp/tests/storage.tftest.hcl`
+- **Sync impact:**
+  - `terraform/gcp/modules/storage/` — auto-sync safe (adds one empty bucket)
+  - `k8s/overlays/gcp/{api,orchestrator}-deployment-patch.yaml` — manual
+    merge (one env var each; apply Terraform first so the bucket exists).
+    If you already set `EVE_DB_SNAPSHOT_BUCKET` or `EVE_DEPLOYMENT_ID` through
+    `secrets.env`, keep a bucket name under `<name_prefix>-eve-` or move the
+    existing snapshots across.
+  - `terraform/gcp/outputs.tf` — manual merge (adds `storage_db_snapshot_bucket`)
+
 ### fix: scope GCP storage IAM to Eve's buckets and give agent-runtime its own account
 
 The GCP storage service account held `roles/storage.admin` on the whole
