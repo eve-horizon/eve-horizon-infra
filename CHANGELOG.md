@@ -14,9 +14,12 @@ Each entry includes **Sync impact** to guide what downstream agents need to do.
 Runner pods execute job code but ran as `eve-worker`, whose token can read
 every Secret in the cluster and create pods anywhere. They now run as a new
 `eve-runner` account with no RBAC, no cloud identity and no mounted token. The
-worker's RBAC drops rights its code never uses, and on GKE two admission
+worker's RBAC drops rights its code never uses, and on GKE three admission
 policies stop Eve's controller identities from creating privileged or
-host-level pods, non-ClusterIP Services, or anything in system namespaces.
+host-level pods, non-ClusterIP Services or Service external IPs, anything in
+system namespaces, and anything in `eve` except runner pods and their
+workspace claims (so job code holding the worker token cannot rewrite the
+registry config, certificates, Secrets or the API Deployment).
 
 - **Scope:** `k8s/base/runner-serviceaccount.yaml` (new),
   `k8s/base/kustomization.yaml`, `k8s/base/worker-deployment.yaml`,
@@ -41,7 +44,14 @@ host-level pods, non-ClusterIP Services, or anything in system namespaces.
     egress (hostNetwork) and TCP ingress (LoadBalancer) workloads, which the
     GKE overlay leaves off (`EVE_COMPUTE_MODEL=gke`, no
     `EVE_TCP_INGRESS_PROVIDER`); add any extra system namespaces of yours to
-    the scope guard's list. Not added to `aws` or `aws-eks`: their supported
+    the scope guard's list. In `eve` they allow only `eve-runner-*` pods
+    (label `eve.type=runner`, account `eve-runner`, volumes limited to
+    emptyDir, their `eve-ws-*` claim and the org filesystem claim) and
+    `eve-ws-*` claims, so `EVE_BUILD_BACKEND=kaniko` (a Secret and Job in
+    `eve`) and runner pods with a mounted API token are refused. **Residual:**
+    admission cannot refuse reads, so job code that reaches the worker token
+    (in-process script steps) can still read Secrets in `eve` such as
+    `eve-api-keys`; this closes when scripts run in runner pods. Not added to `aws` or `aws-eks`: their supported
     stable-egress and NLB TCP-ingress features need hostNetwork pods and
     LoadBalancer Services, and the k3s install is not pinned to 1.30+.
   - `scripts/` — template CI assertions (runner account, worker env and RBAC

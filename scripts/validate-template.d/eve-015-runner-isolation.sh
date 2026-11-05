@@ -47,7 +47,7 @@ for overlay in "${OVERLAYS[@]}"; do
 done
 
 gcp_render="$work_root/gcp.yaml"
-for policy in eve-controller-workload-guard eve-controller-scope-guard; do
+for policy in eve-controller-workload-guard eve-controller-scope-guard eve-controller-platform-namespace-guard; do
   vap="$(rendered_doc ValidatingAdmissionPolicy "$policy" "$gcp_render")"
   [[ -n "$vap" ]] || fail "gcp render is missing admission policy $policy"
   grep -Fxq '  failurePolicy: Fail' <<<"$vap" || fail "$policy must fail closed"
@@ -70,3 +70,29 @@ case "$(env_value EVE_TCP_INGRESS_PROVIDER <<<"$gcp_worker")" in
   "" | none) ;;
   *) fail "gcp worker enables TCP ingress LoadBalancer Services, which the admission guard refuses" ;;
 esac
+
+# Service external IPs (CVE-2020-8554) are refused like non-ClusterIP types.
+grep -Fq 'has(object.spec.externalIPs)' <<<"$(rendered_doc ValidatingAdmissionPolicy eve-controller-scope-guard "$gcp_render")" \
+  || fail "eve-controller-scope-guard must refuse Service externalIPs"
+
+# In eve, controllers may only manage runner pods and workspace claims. The
+# names the guard allows must be the ones the platform and render use.
+ns_guard="$(rendered_doc ValidatingAdmissionPolicy eve-controller-platform-namespace-guard "$gcp_render")"
+ns_guard_flat="$(tr -d '\n' <<<"$ns_guard" | tr -s ' ')"
+grep -A2 -Fx '    namespaceSelector:' <<<"$ns_guard" | grep -Fxq '        kubernetes.io/metadata.name: eve' \
+  || fail "eve-controller-platform-namespace-guard must select the eve namespace"
+grep -Fxq "      - '*/*'" <<<"$ns_guard" \
+  || fail "eve-controller-platform-namespace-guard must also cover subresources"
+for fragment in "labels['eve.type'] == 'runner'" "startsWith('eve-runner-')" "startsWith('eve-ws-')" \
+  "serviceAccountName == 'eve-runner'"; do
+  grep -Fq "$fragment" <<<"$ns_guard_flat" \
+    || fail "eve-controller-platform-namespace-guard lost its runner rule ($fragment)"
+done
+org_claim="$(grep -Eo "claimName == '[a-z0-9-]+'" <<<"$ns_guard_flat" | head -1 | cut -d"'" -f2)"
+[[ -n "$(rendered_doc PersistentVolumeClaim "$org_claim" "$gcp_render")" ]] \
+  || fail "eve-controller-platform-namespace-guard allows org claim '$org_claim', which the gcp render does not define"
+[[ "$(env_value EVE_K8S_NAMESPACE <<<"$gcp_worker")" == "eve" ]] \
+  || fail "gcp worker must launch runner pods in eve, where the namespace guard expects them"
+if [[ "$(env_value EVE_BUILD_BACKEND <<<"$gcp_worker")" == "kaniko" ]]; then
+  fail "gcp worker uses the kaniko build backend, which writes Secrets and Jobs in eve that the guard refuses"
+fi
