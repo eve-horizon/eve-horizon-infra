@@ -90,6 +90,12 @@ jobs:
       # -----------------------------------------------------------------------
       - name: Resolve version
         id: version
+        # Inputs reach the script through the environment, never through
+        # ${{ }} expansion inside `run:`, which would splice the raw text
+        # into the shell script before bash parses it.
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          CONFIG_VERSION: ${{ steps.config.outputs.version }}
         run: |
           VERSION=""
 
@@ -99,13 +105,20 @@ jobs:
           fi
 
           # 2. From workflow_dispatch input
-          if [[ -n "${{ inputs.version }}" ]]; then
-            VERSION="${{ inputs.version }}"
+          if [[ -n "$INPUT_VERSION" ]]; then
+            VERSION="$INPUT_VERSION"
           fi
 
           # 3. Fallback to config/platform.yaml
           if [[ -z "$VERSION" ]]; then
-            VERSION="${{ steps.config.outputs.version }}"
+            VERSION="$CONFIG_VERSION"
+          fi
+
+          # Later steps put VERSION into perl, yq and git commands; accept
+          # only a release version (optionally with a pre-release suffix).
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Invalid release version; expected e.g. 0.1.28"
+            exit 1
           fi
 
           echo "Deploying version: $VERSION"

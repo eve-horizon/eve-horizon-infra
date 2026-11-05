@@ -7,6 +7,27 @@ Each entry includes **Sync impact** to guide what downstream agents need to do.
 
 ---
 
+## [2026-11-05]
+
+### fix: pass the deploy version input through the environment
+
+- **Scope:** `.github/workflows/deploy.yml`, `scripts/validate-template.sh`,
+  `tests/test_workflow_inputs.py` (new)
+- **Why:** the `Resolve version` step expanded `${{ inputs.version }}` inside
+  `run:`, so the dispatch input was spliced into the shell script before bash
+  parsed it (script injection by anyone who can dispatch the workflow), and
+  the unchecked version then reached perl, yq and git commands.
+- **What changed:** the input and the config version reach the script as
+  `INPUT_VERSION` and `CONFIG_VERSION`, and the resolved version must look
+  like `0.1.28` (optionally `-<pre-release>`) or the deploy stops before
+  touching the cluster. Template CI checks that no workflow expands
+  `inputs.*`, `github.event.*` or `github.head_ref` inside a script, and runs
+  the step against hostile inputs.
+- **Sync impact:**
+  - `.github/workflows/deploy.yml` — manual merge (one step changes; deploys
+    of a non-release version string such as `latest` now fail fast)
+  - `scripts/validate-template.sh`, `tests/` — template-only CI
+
 ## [2026-08-25]
 
 ### fix: preserve migration safety and complete auth bootstrap overlays
