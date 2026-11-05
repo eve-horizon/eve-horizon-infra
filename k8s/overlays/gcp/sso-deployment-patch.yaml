@@ -11,8 +11,10 @@ spec:
           image: public.ecr.aws/w7c4v0w3/eve-horizon/sso:latest
           env:
             - name: SUPABASE_AUTH_EXTERNAL_URL
-              value: "https://auth.example.com"
+              value: "https://auth.eve.example.com"
+            # Session cookie domain: must cover sso.<domain> and the app
+            # hosts under apps.<domain>, so it is the platform domain.
             - name: EVE_DEFAULT_DOMAIN
-              value: "example.com"
+              value: "eve.example.com"
             - name: EVE_SSO_SECURE_COOKIES
               value: "true"

@@ -1,3 +1,8 @@
+# Serve the dashboard through ingress-nginx at dashboard.<domain>, like the
+# API, over HTTPS. With no class, GKE's built-in controller claimed this
+# Ingress (setup.sh does not make ingress-nginx the default class) and built a
+# separate Google load balancer outside the platform DNS. Rules have no merge
+# key, so this list replaces the base rule.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -12,8 +17,7 @@ spec:
         - dashboard.eve.example.com
       secretName: eve-dashboard-tls
   rules:
-    - $patch: replace
-      host: dashboard.eve.example.com
+    - host: dashboard.eve.example.com
       http:
         paths:
           - path: /
