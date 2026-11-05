@@ -164,6 +164,24 @@ Prerequisites for this step:
 - `helm` v3 installed (for cert-manager)
 - `config/secrets.env` populated (step 3, with DATABASE_URL from step 4)
 
+#### Ingress controller
+
+On GKE and AWS EKS, setup installs the ingress-nginx controller from a pinned
+Helm chart (`INGRESS_NGINX_CHART_VERSION` in `scripts/setup.sh`, default
+`4.14.3`, the same chart the deploy workflow reconciles aws-eks clusters to).
+Override it for one run with `INGRESS_NGINX_CHART_VERSION=<chart> ./scripts/setup.sh`;
+to change it for good, change both pins together.
+
+ingress-nginx is retired upstream: the Kubernetes project stopped releasing
+it in March 2026 (the final charts are 4.14.5 and 4.15.1), so it receives no
+further bug or security fixes. The template still installs it, but the
+planned successor is the Kubernetes Gateway API, served by a maintained
+implementation (GKE's built-in Gateway controller on GCP, or a portable
+controller such as Traefik or Envoy Gateway). Until the template migrates,
+an instance may run another ingress controller: set the `ingressClassName`
+and annotations in its overlay and the ACME solver class in setup's
+ClusterIssuers to match.
+
 ### 7. Deploy Eve Horizon
 
 ```bash

@@ -26,6 +26,22 @@ if git -C "$REPO_ROOT" grep -n -I -i -E \
   fail "template contains instance-specific domains, IDs, or names"
 fi
 
+# Every ingress-nginx Helm command is pinned, and setup installs the same chart
+# the deploy workflow reconciles aws-eks clusters to.
+helm_commands() {
+  # Join backslash-continued lines so each command is one line.
+  awk '/\\$/ { sub(/\\$/, ""); line = line $0; next } { print line $0; line = "" }' "$1"
+}
+for file in scripts/setup.sh .github/workflows/deploy.yml; do
+  helm_commands "$REPO_ROOT/$file" | grep 'helm .*ingress-nginx/ingress-nginx' | grep -v -- '--version' \
+    && fail "$file installs ingress-nginx without a chart --version"
+done
+# shellcheck disable=SC2016 # the sed pattern matches a literal ${...}
+setup_ingress_chart="$(sed -n 's/^INGRESS_NGINX_CHART_VERSION="\${INGRESS_NGINX_CHART_VERSION:-\([^}]*\)}"$/\1/p' "$REPO_ROOT/scripts/setup.sh")"
+deploy_ingress_chart="$(sed -n 's/^ *INGRESS_NGINX_CHART_VERSION: *//p' "$REPO_ROOT/.github/workflows/deploy.yml")"
+[[ -n "$setup_ingress_chart" && "$setup_ingress_chart" == "$deploy_ingress_chart" ]] \
+  || fail "setup.sh ingress-nginx chart '$setup_ingress_chart' differs from deploy.yml '$deploy_ingress_chart'"
+
 work_root="$(mktemp -d)"
 trap 'rm -rf "$work_root"' EXIT
 
