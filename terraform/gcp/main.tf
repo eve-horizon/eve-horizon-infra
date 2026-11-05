@@ -96,6 +96,7 @@ module "gke" {
   boot_disk_size            = local.effective_boot_disk_size
   allowed_api_cidrs         = var.allowed_api_cidrs
   service_account_email     = google_service_account.gke_nodes.email
+  enable_dataplane_v2       = var.enable_dataplane_v2
 }
 
 # -----------------------------------------------------------------------------

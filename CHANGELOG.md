@@ -564,6 +564,53 @@ host-level pods, non-ClusterIP Services, or anything in system namespaces.
   - `scripts/` — template CI assertions (runner account, worker env and RBAC
     in every overlay; GKE admission policies fail closed and deny).
 
+### fix: enforce NetworkPolicy on new GKE clusters and fence internal services
+
+GKE clusters were created without a NetworkPolicy enforcer, so even the base
+BuildKit policy did nothing, and the worker, agent runtime and orchestrator
+endpoints (no authentication of their own) were reachable from agent code and
+user apps. New clusters now use GKE Dataplane V2, and the GKE overlay adds
+ingress policies for those services, runner pods and mailpit.
+
+- **Scope:** `terraform/gcp/modules/gke/` (`main.tf`, `variables.tf`,
+  `outputs.tf`), `terraform/gcp/main.tf`, `terraform/gcp/variables.tf`,
+  `terraform/gcp/outputs.tf`, `terraform/gcp/terraform.tfvars.example`,
+  `k8s/overlays/gcp/network-policies.yaml` (new),
+  `k8s/overlays/gcp/kustomization.yaml`, `scripts/validate-template.sh`,
+  `scripts/validate-template.d/` (new)
+- **Why the Dataplane V2 default cannot hurt an existing cluster:** GKE sets
+  the datapath only at cluster creation; changing `datapath_provider` on an
+  existing cluster forces Terraform to destroy and recreate it. The module
+  now sets it from `enable_dataplane_v2` (default `true`) **and** lists it in
+  `lifecycle.ignore_changes`. New clusters get Dataplane V2; for an existing
+  cluster the setting is ignored, so `terraform plan` shows no change and
+  never proposes a replacement. A default of `false` would have left every
+  new instance unprotected; a default of `true` without the ignore would
+  have destroyed existing clusters on their next apply.
+- **Sync impact:**
+  - `terraform/gcp/modules/gke/` — auto-sync safe (no plan change for an
+    existing cluster). **Action required to get enforcement on an existing
+    cluster:** run `terraform output network_policy_enforced`. If it is
+    `false`, the NetworkPolicies are inert until the cluster is rebuilt
+    (`terraform apply -replace=module.gke.google_container_cluster.main`,
+    a full rebuild with downtime: redeploy the platform and apps after).
+  - `terraform/gcp/{main,variables,outputs}.tf`, `terraform.tfvars.example` —
+    manual merge (pass `enable_dataplane_v2` through and expose
+    `network_policy_enforced`; the module default applies if you skip it).
+  - `k8s/overlays/gcp/` — manual merge. Ingress only: the API and
+    orchestrator may call the worker; the orchestrator, API and worker the
+    agent runtime; the API and worker the orchestrator; the worker and agent
+    runtime their runner pods; the API and GoTrue mailpit's SMTP port.
+    Egress is unchanged. If you run extra in-cluster callers of these
+    services (for example a second worker deployment or a metrics scraper),
+    add them before rebuilding onto Dataplane V2.
+  - Not added to `aws` or `aws-eks`. k3s enforces NetworkPolicy natively and
+    EKS only with the VPC CNI network-policy agent enabled; reuse the file
+    there once verified on a live cluster.
+  - `scripts/` — template CI assertions (expected policies, selectors and
+    callers match rendered workloads; Dataplane V2 default and the
+    replacement guard in the GKE module).
+
 ## [2026-08-25]
 
 ### fix: preserve migration safety and complete auth bootstrap overlays

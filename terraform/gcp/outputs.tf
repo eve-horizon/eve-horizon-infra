@@ -5,6 +5,11 @@ output "cluster_name" {
   value       = module.gke.cluster_name
 }
 
+output "network_policy_enforced" {
+  description = "Whether the cluster enforces NetworkPolicy (Dataplane V2). If false, the overlay NetworkPolicies are inert; see CHANGELOG 2026-11-05."
+  value       = module.gke.network_policy_enforced
+}
+
 output "kubeconfig_command" {
   description = "Command to configure kubectl"
   value       = "gcloud container clusters get-credentials ${module.gke.cluster_name} --zone ${var.gcp_zone} --project ${var.gcp_project_id}"

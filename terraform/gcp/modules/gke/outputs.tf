@@ -3,6 +3,11 @@ output "cluster_name" {
   value       = google_container_cluster.main.name
 }
 
+output "network_policy_enforced" {
+  description = "Whether the live cluster enforces NetworkPolicy (Dataplane V2). False for clusters created before Dataplane V2 was the default."
+  value       = google_container_cluster.main.datapath_provider == "ADVANCED_DATAPATH"
+}
+
 output "cluster_endpoint" {
   description = "GKE cluster API endpoint"
   value       = google_container_cluster.main.endpoint
