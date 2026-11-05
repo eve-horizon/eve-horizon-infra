@@ -233,7 +233,7 @@ variable "database_instance_class" {
 }
 
 variable "deletion_protection" {
-  description = "Enable deletion protection on Cloud SQL"
+  description = "Protect Cloud SQL from deletion in Terraform and in Cloud SQL itself (console, gcloud, API)"
   type        = bool
   default     = false
 }
