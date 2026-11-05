@@ -18,6 +18,12 @@ fail() {
 command -v git >/dev/null || fail "git is required"
 command -v kubectl >/dev/null || fail "kubectl with Kustomize v5 is required"
 
+# Outputs are printed by `terraform output -json` and readable through remote
+# state, `sensitive` or not. None may carry the database password.
+if git -C "$REPO_ROOT" grep -n -E 'db_password' -- 'terraform/*/outputs.tf'; then
+  fail "a Terraform output exposes the database password"
+fi
+
 if git -C "$REPO_ROOT" grep -n -I -i -E \
   'corf\.ai|corfai|api\.eh1\.incept5\.dev|org_Incept5|proj_[0-9a-z]{10,}|user_[0-9a-z]{10,}' \
   -- . \

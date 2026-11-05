@@ -63,6 +63,38 @@ Each entry includes **Sync impact** to guide what downstream agents need to do.
   - `scripts/validate-template.sh` — auto-sync safe; asserts the module keeps
     both guards tied to the variable
 
+### fix: keep the DB password out of Terraform outputs; correct api_url; supported cert-manager
+
+- **Scope:** `terraform/{aws,gcp}/outputs.tf`, `terraform/gcp/modules/sql/main.tf`,
+  `scripts/setup.sh`, `scripts/validate-template.sh`, `DEPLOYMENT.md`,
+  `config/secrets.env.example`
+- **Why:** the `database_url` output embedded the database password, so
+  `terraform output -json` and anything reading the state's outputs printed it
+  (`sensitive` only hides it on screen). It is replaced by a non-secret
+  `database_host` output; build `DATABASE_URL` from it and your tfvars.
+  `api_url` (and the GCP `next_steps` `EVE_API_URL`) pointed at the apex
+  domain instead of the API host, `api.<domain>`. `setup.sh` pinned
+  cert-manager `v1.17.1`, which is out of support; it now installs `v1.21.3`.
+  The password itself is still in state through the database user resource;
+  once Terraform 1.11 is the minimum, `google_sql_user` can move to the
+  write-only `password_wo`.
+- **Sync impact:**
+  - `terraform/{aws,gcp}/outputs.tf` — manual merge. **Action required** if a
+    script reads `terraform output database_url`: read `database_host` and
+    compose the URL instead. `api_url` changes value; no resource changes.
+  - `scripts/setup.sh` — auto-sync safe. Affects new installs only: setup
+    skips cert-manager when its namespace exists, so running clusters keep
+    their version. Upgrade those with `helm upgrade cert-manager
+    jetstack/cert-manager -n cert-manager --version v1.21.3 --set
+    crds.enabled=true` after reading cert-manager's notes for each minor
+    release in between.
+  - `terraform/gcp/modules/sql/main.tf` — auto-sync safe (comment only)
+  - `DEPLOYMENT.md`, `config/secrets.env.example` — manual merge; documents
+    `database_host` and a URL-safe DB password (`/`, `+` and `=` break the
+    URL, and RDS refuses `/`)
+  - `scripts/validate-template.sh` — auto-sync safe; fails if any
+    `outputs.tf` mentions `db_password`
+
 ## [2026-08-25]
 
 ### fix: preserve migration safety and complete auth bootstrap overlays

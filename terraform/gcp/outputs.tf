@@ -15,10 +15,12 @@ output "ingress_ip" {
   value       = module.gke.ingress_ip
 }
 
-output "database_url" {
-  description = "PostgreSQL connection URL"
-  value       = "postgres://${var.db_username}:${var.db_password}@${module.sql.private_ip}:5432/${var.db_name}"
-  sensitive   = true
+# No database_url output: it would copy the DB password into another output
+# and print it with `terraform output -json`. Build DATABASE_URL from
+# database_host and your tfvars (DEPLOYMENT.md, step 4).
+output "database_host" {
+  description = "PostgreSQL host for DATABASE_URL (Cloud SQL private IP, port 5432)"
+  value       = module.sql.private_ip
 }
 
 output "cloud_sql_private_ip" {
@@ -27,8 +29,8 @@ output "cloud_sql_private_ip" {
 }
 
 output "api_url" {
-  description = "Eve Horizon API URL"
-  value       = "https://${var.domain}"
+  description = "Eve Horizon API URL (api.<domain>, the api_host convention in config/platform.yaml)"
+  value       = "https://api.${var.domain}"
 }
 
 output "ssh_command" {
@@ -73,7 +75,7 @@ output "next_steps" {
        ./scripts/setup.sh
 
     4. Configure Eve CLI:
-       export EVE_API_URL=https://${var.domain}
+       export EVE_API_URL=https://api.${var.domain}
        eve system health
 
     5. Deploy platform:

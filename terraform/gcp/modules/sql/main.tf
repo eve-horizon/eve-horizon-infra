@@ -52,5 +52,7 @@ resource "google_sql_database" "main" {
 resource "google_sql_user" "main" {
   name     = var.db_username
   instance = google_sql_database_instance.main.name
+  # Stored in state. Once Terraform 1.11 is the minimum, switch to the
+  # write-only password_wo (with password_wo_version) to keep it out.
   password = var.db_password
 }
