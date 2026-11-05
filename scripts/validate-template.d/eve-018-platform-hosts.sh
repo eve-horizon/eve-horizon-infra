@@ -74,13 +74,36 @@ api_host="$(rendered_doc Ingress eve-api "$gcp_render" | awk '/^ *(- )?host: / {
 [[ "$api_host" == "api.$platform_domain" ]] \
   || fail "gcp eve-api ingress host ($api_host) must be api.<platform domain> ($platform_domain)"
 
-# Every platform ingress host under the platform domain needs a DNS record.
+# Every platform ingress host (rules and TLS) must sit under the platform
+# domain and have a DNS record. A platform host outside it (for example
+# sso.example.com beside eve.example.com) is not reserved by the host guard,
+# so a tenant could register it as a custom domain and capture its paths.
 platform_ingress_hosts="$(awk '
-  /^---$/ { ingress = 0 } /^kind: Ingress$/ { ingress = 1 }
-  ingress && /^ *(- )?host: / { print $NF }' "$gcp_render" | sort -u)"
+  /^---$/ { ingress = 0 }
+  /^kind: Ingress$/ { ingress = 1 }
+  !ingress { next }
+  /^ *(- )?host: / { print $NF; next }
+  /^  - hosts:$/ { tls = 1; next }
+  tls && /^    - / { print $2; next }
+  { tls = 0 }' "$gcp_render" | sort -u)"
+[[ -n "$platform_ingress_hosts" ]] || fail "gcp render has no platform ingress hosts"
 for host in $platform_ingress_hosts; do
-  [[ "$host" == *".$platform_domain" ]] || continue
+  [[ "$host" == "$platform_domain" || "$host" == *".$platform_domain" ]] \
+    || fail "gcp platform ingress host $host is outside the platform domain $platform_domain"
   label="${host%".$platform_domain"}"
   grep -Fxq "$label" <<<"$module_hosts" \
     || fail "gcp ingress host $host has no DNS record (add \"$label\" to platform_hosts)"
 done
+
+# Auth and SSO URLs must name hosts the platform ingress serves, and the SSO
+# session cookie must cover sso.<domain> and the app hosts: the platform domain.
+for pair in "eve-sso SUPABASE_AUTH_EXTERNAL_URL" "supabase-auth API_EXTERNAL_URL" "supabase-auth GOTRUE_SITE_URL"; do
+  read -r deployment var <<<"$pair"
+  url="$(env_value "$var" < <(rendered_doc Deployment "$deployment" "$gcp_render"))"
+  url_host="${url#https://}"
+  url_host="${url_host%%/*}"
+  grep -Fxq "$url_host" <<<"$platform_ingress_hosts" \
+    || fail "gcp $deployment $var ($url) must point at a platform ingress host"
+done
+[[ "$(env_value EVE_DEFAULT_DOMAIN < <(rendered_doc Deployment eve-sso "$gcp_render"))" == "$platform_domain" ]] \
+  || fail "gcp eve-sso EVE_DEFAULT_DOMAIN (its session cookie domain) must be the platform domain"

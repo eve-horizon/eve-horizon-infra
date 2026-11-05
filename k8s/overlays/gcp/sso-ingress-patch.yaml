@@ -9,10 +9,10 @@ metadata:
 spec:
   tls:
     - hosts:
-        - sso.example.com
+        - sso.eve.example.com
       secretName: eve-sso-tls
   rules:
-    - host: sso.example.com
+    - host: sso.eve.example.com
       http:
         paths:
           - path: /

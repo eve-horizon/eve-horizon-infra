@@ -22,7 +22,9 @@ and a GKE admission policy refuses tenant ingresses on platform hosts.
   `terraform/gcp/outputs.tf`, `terraform/gcp/terraform.tfvars.example`,
   `k8s/overlays/gcp/ingress-host-policy.yaml` (new),
   `k8s/overlays/gcp/kustomization.yaml`,
-  `k8s/overlays/gcp/{worker,api}-deployment-patch.yaml`,
+  `k8s/overlays/gcp/{worker,api,sso,supabase-auth}-deployment-patch.yaml`,
+  `k8s/overlays/gcp/{sso,supabase-auth}-ingress-patch.yaml`,
+  `k8s/overlays/gcp/dashboard-ingress-patch.yaml` (new),
   `scripts/validate-template.sh`, `scripts/validate-template.d/` (new)
 - **What changes:**
   - DNS: A records for `dns_platform_hosts` (default `api`, `registry`,
@@ -40,6 +42,18 @@ and a GKE admission policy refuses tenant ingresses on platform hosts.
   - The GKE API now gets `EVE_DEFAULT_DOMAIN` (it had none, so its
     custom-domain check did nothing), and the overlay placeholder becomes
     `apps.eve.example.com` to match the DNS app wildcard.
+  - Every GKE platform host now sits under the platform domain, because
+    the host guard only reserves names under it: SSO and GoTrue move from
+    `sso.example.com` and `auth.example.com` to `sso.<domain>` and
+    `auth.<domain>` (ingress hosts, TLS hosts, `SUPABASE_AUTH_EXTERNAL_URL`,
+    `API_EXTERNAL_URL`, `GOTRUE_SITE_URL`, the GoTrue CORS origin), the SSO
+    session cookie domain (`EVE_DEFAULT_DOMAIN` on `eve-sso`) becomes the
+    platform domain, and the dashboard Ingress (previously the base
+    `dashboard.eve.lvh.me` with no class) is served by ingress-nginx at
+    `dashboard.<domain>` (`dashboard-ingress-patch.yaml`, new). With no class,
+    GKE's built-in controller had claimed it and built a separate Google
+    load balancer outside the platform DNS; GKE removes that load balancer
+    once the class changes.
 - **Sync impact:**
   - `terraform/gcp/modules/dns/` — **action required: this removes live DNS
     records.** Names that resolved only through `*.<domain>` or the apex stop
@@ -60,13 +74,19 @@ and a GKE admission policy refuses tenant ingresses on platform hosts.
   - `k8s/overlays/gcp/` — manual merge. Set the policy's `platformDomain` to
     your Terraform `domain` and `appDomain` to your `EVE_DEFAULT_DOMAIN`
     (`apps.<domain>`), and set the same `EVE_DEFAULT_DOMAIN` on the API.
+    If your SSO, auth or dashboard hosts sit outside the platform domain,
+    move them under it (update GoTrue's redirect URLs, the OAuth providers'
+    callback URLs and any bookmarked login links); otherwise keep them and
+    add their exact names to the host guard yourself.
     Before applying, check `kubectl get ingress -A` for environment-namespace
     hosts under `<domain>` but outside `apps.<domain>`: their next deploy
     will be refused; move them to an app alias or a domain you own.
   - `scripts/` — template CI assertions (no unconditional apex or wildcard
     record; DNS host defaults agree; policy domains, worker and API
-    `EVE_DEFAULT_DOMAIN` and the API host agree; every platform ingress host
-    has a record).
+    `EVE_DEFAULT_DOMAIN` and the API host agree; every platform ingress and
+    TLS host is under the platform domain and has a record; auth and SSO
+    URLs point at served hosts; the SSO cookie domain is the platform
+    domain).
 
 ## [2026-08-25]
 
