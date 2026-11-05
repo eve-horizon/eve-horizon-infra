@@ -179,6 +179,18 @@ bin/eve-infra health
 
 The deploy command builds manifests from `k8s/overlays/<overlay>/` (`overlay` from `config/platform.yaml`, falling back to `cloud`) and applies them to the cluster, then waits for rollouts to complete.
 
+The overlays ship with placeholder values that you replace with this
+instance's values before the first deploy: `INSTANCE_PREFIX` (your
+`name_prefix`), `GCP_PROJECT`, `YOUR_REGION`, `REPLACE_*`, and `example.com`
+hosts (your `api_host`, `app_domain`, and the auth, SSO and registry hosts).
+Deploy (and the deploy workflow) renders the overlay first and refuses to
+continue while any of these remain, listing each one with the resources that
+carry it. Check before deploying with:
+
+```bash
+kubectl kustomize k8s/overlays/<overlay> | scripts/check-placeholders.sh
+```
+
 ### 8. Verify
 
 ```bash
