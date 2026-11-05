@@ -1,0 +1,22 @@
+# Serve the dashboard through the same controller as the API (class nginx)
+# at dashboard.<domain>. With no class it went to whichever controller is
+# the cluster default (Traefik on k3s), apart from the API's. Rules have no
+# merge key, so this list replaces the base rule.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: eve-dashboard
+  namespace: eve
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: dashboard.eve.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: eve-dashboard
+                port:
+                  number: 3200
