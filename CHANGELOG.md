@@ -362,6 +362,21 @@ cluster. The member strings are unchanged.
     contain `eve-app`/`eve-api-keys`, and only `eve-api` may reference
     `eve-api-keys` or an API-only key
 
+### ci: run the template contract check only in the canonical template
+
+- **Scope:** `.github/workflows/template-ci.yml`, `scripts/validate-template.sh`
+- **Why:** repos created from the template inherited Template CI, whose
+  `validate-template.sh` asserts template-only facts (floating tags, the
+  instance-name scrub) and so failed on every instance push.
+- **What changed:** the `manifests` job runs only in
+  `eve-horizon/eve-horizon-infra`, mirroring the inverse guard on
+  `deploy.yml`. The `terraform` job (fmt and credential-free validate) still
+  runs everywhere. Template CI now asserts both guards.
+- **Sync impact:**
+  - `.github/workflows/template-ci.yml` — auto-sync safe (instances stop
+    running the manifests job; Terraform checks continue)
+  - `scripts/validate-template.sh` — template-only CI assertion
+
 ## [2026-08-25]
 
 ### fix: preserve migration safety and complete auth bootstrap overlays
