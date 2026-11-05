@@ -11,6 +11,8 @@ spec:
           image: public.ecr.aws/w7c4v0w3/eve-horizon/api:0.1.132
           env:
             - $patch: replace
+            - name: NODE_ENV
+              value: production
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:

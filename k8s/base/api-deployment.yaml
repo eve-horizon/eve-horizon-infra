@@ -30,6 +30,11 @@ spec:
             - secretRef:
                 name: eve-app
           env:
+            # Production mode: first-admin bootstrap requires EVE_BOOTSTRAP_TOKEN and
+            # is closed once an admin exists. Older API images default to
+            # development mode, so keep this explicit. Never override it.
+            - name: NODE_ENV
+              value: production
             - name: DATABASE_URL
               value: postgres://eve:eve@postgres.eve.svc.cluster.local:5432/eve
             - name: API_PORT

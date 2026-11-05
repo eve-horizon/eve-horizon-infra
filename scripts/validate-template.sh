@@ -26,6 +26,18 @@ if git -C "$REPO_ROOT" grep -n -I -i -E \
   fail "template contains instance-specific domains, IDs, or names"
 fi
 
+# Print the rendered document of the given kind and metadata.name.
+rendered_doc() {
+  local file="$1" kind="$2" name="$3"
+  awk -v kind="$kind" -v name="$name" '
+    /^---$/ { if (k && n) printf "%s", buf; buf = ""; k = 0; n = 0; next }
+    { buf = buf $0 "\n" }
+    $0 == "kind: " kind { k = 1 }
+    $0 == "  name: " name { n = 1 }
+    END { if (k && n) printf "%s", buf }
+  ' "$file"
+}
+
 work_root="$(mktemp -d)"
 trap 'rm -rf "$work_root"' EXIT
 
@@ -42,6 +54,13 @@ for overlay in "${OVERLAYS[@]}"; do
     grep -Eq "image: .*eve-horizon/${service}:" "$rendered" \
       || fail "$overlay render is missing the $service service image"
   done
+
+  # EVE-001: the API must run in production mode (bootstrap closed once an
+  # admin exists; token required before that).
+  rendered_doc "$rendered" Deployment eve-api \
+    | grep -A1 -E '^ +- name: NODE_ENV$' \
+    | grep -Eq '^ +value: "?production"?$' \
+    || fail "$overlay render does not set NODE_ENV=production on eve-api"
 
   upgrade_root="$work_root/upgrade-$overlay"
   mkdir -p "$upgrade_root"
