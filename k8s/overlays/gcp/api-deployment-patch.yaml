@@ -35,3 +35,5 @@ spec:
               value: "INSTANCE_PREFIX-eve-internal"
             - name: EVE_STORAGE_ORG_BUCKET_PREFIX
               value: "INSTANCE_PREFIX-eve-org"
+            - name: EVE_DB_SNAPSHOT_BUCKET
+              value: "INSTANCE_PREFIX-eve-db-snapshots"

@@ -124,4 +124,68 @@ for overlay in "${OVERLAYS[@]}"; do
   done
 done
 
-echo "Template validation passed: 3 overlays, 7 services, migration, and scrub checks."
+# Print one rendered resource, selected by kind and metadata.name.
+resource_doc() {
+  awk -v kind="$1" -v name="$2" '
+    function flush() {
+      if (doc_kind == kind && doc_name == name) printf "%s", doc
+      doc = ""; doc_kind = ""; doc_name = ""; in_metadata = 0
+    }
+    /^---$/ { flush(); next }
+    { doc = doc $0 "\n" }
+    /^kind: / { doc_kind = $2 }
+    /^metadata:/ { in_metadata = 1; next }
+    /^[^ ]/ { in_metadata = 0 }
+    in_metadata && /^  name: / && doc_name == "" { doc_name = $2 }
+    END { flush() }
+  ' "$3"
+}
+
+# Print the literal value of a container env var in the resource on stdin.
+env_value() {
+  awk -v env="$1" '
+    $0 ~ ("- name: " env "$") { found = 1; next }
+    found && /^ *value: / { sub(/^ *value: /, ""); gsub(/"/, ""); print; exit }
+    found { exit }
+  '
+}
+
+# GCP storage identity: the overlay must match terraform/gcp/modules/storage,
+# whose IAM only covers buckets named INSTANCE_PREFIX-eve-*. agent-runtime
+# runs agent code, so it holds its own read-only GSA, never the platform one.
+gcp_render="$work_root/gcp.yaml"
+gke_gsa() {
+  resource_doc ServiceAccount "$1" "$gcp_render" \
+    | sed -n 's/^ *iam\.gke\.io\/gcp-service-account: //p'
+}
+
+[[ "$(gke_gsa eve-agent-runtime)" == "INSTANCE_PREFIX-eve-agents@GCP_PROJECT.iam.gserviceaccount.com" ]] \
+  || fail "gcp eve-agent-runtime must use its own GSA (INSTANCE_PREFIX-eve-agents), not the platform storage GSA"
+for ksa in eve-api eve-worker eve-orchestrator; do
+  [[ "$(gke_gsa "$ksa")" == "INSTANCE_PREFIX-eve-storage@GCP_PROJECT.iam.gserviceaccount.com" ]] \
+    || fail "gcp $ksa must use the platform storage GSA"
+done
+
+gcp_worker="$(resource_doc Deployment eve-worker "$gcp_render")"
+[[ "$(env_value EVE_STORAGE_ORG_BUCKET_PREFIX <<<"$gcp_worker")" == "INSTANCE_PREFIX-eve-org" ]] \
+  || fail "gcp worker must set EVE_STORAGE_ORG_BUCKET_PREFIX=INSTANCE_PREFIX-eve-org"
+[[ "$(env_value EVE_STORAGE_APP_BUCKET_PREFIX <<<"$gcp_worker")" == "INSTANCE_PREFIX-eve-app" ]] \
+  || fail "gcp worker must set EVE_STORAGE_APP_BUCKET_PREFIX=INSTANCE_PREFIX-eve-app, apart from org buckets"
+
+for deployment in eve-api eve-orchestrator; do
+  [[ "$(resource_doc Deployment "$deployment" "$gcp_render" | env_value EVE_DB_SNAPSHOT_BUCKET)" == "INSTANCE_PREFIX-eve-db-snapshots" ]] \
+    || fail "gcp $deployment must set EVE_DB_SNAPSHOT_BUCKET=INSTANCE_PREFIX-eve-db-snapshots"
+done
+
+bucket_settings=0
+while read -r bucket_setting; do
+  [[ "$bucket_setting" == INSTANCE_PREFIX-eve-* ]] \
+    || fail "gcp bucket setting '$bucket_setting' is outside INSTANCE_PREFIX-eve-*, where Eve's GSAs have no access"
+  bucket_settings=$((bucket_settings + 1))
+done < <(
+  grep -A1 -E '^ *- name: EVE_(STORAGE_[A-Z_]*BUCKET[A-Z_]*|DB_SNAPSHOT_BUCKET)$' "$gcp_render" \
+    | sed -n 's/^ *value: //p' | tr -d '"'
+)
+((bucket_settings >= 6)) || fail "gcp render lost its storage bucket settings"
+
+echo "Template validation passed: 3 overlays, 7 services, migration, GCP storage identity, and scrub checks."

@@ -32,6 +32,8 @@ spec:
               value: "gcs"
             - name: EVE_STORAGE_REGION
               value: "YOUR_REGION"
+            - name: EVE_DB_SNAPSHOT_BUCKET
+              value: "INSTANCE_PREFIX-eve-db-snapshots"
             - name: EVE_MANAGED_DB_RECONCILER_ENABLED
               value: "true"
             - name: EVE_MANAGED_DB_LOCAL_SEED

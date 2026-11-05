@@ -56,3 +56,9 @@ jobs:
 
       - name: Validate configuration
         run: terraform -chdir=${{ matrix.root }} validate
+
+      - name: Run offline Terraform tests
+        run: |
+          if compgen -G "${{ matrix.root }}/tests/*.tftest.hcl" >/dev/null; then
+            terraform -chdir=${{ matrix.root }} test
+          fi

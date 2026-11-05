@@ -35,6 +35,12 @@ spec:
               value: "INSTANCE_PREFIX-eve-internal"
             - name: EVE_STORAGE_ORG_BUCKET_PREFIX
               value: "INSTANCE_PREFIX-eve-org"
+            # App buckets get their own prefix so bucket IAM (public app
+            # buckets) and app credentials can be scoped away from org and
+            # internal buckets. Changing it renames every app bucket; see
+            # terraform/gcp/modules/storage/README.md before editing.
+            - name: EVE_STORAGE_APP_BUCKET_PREFIX
+              value: "INSTANCE_PREFIX-eve-app"
             - name: EVE_RUNNER_IMAGE
               value: public.ecr.aws/w7c4v0w3/eve-horizon/worker:latest
             - name: EVE_TOOLCHAIN_IMAGE_PREFIX
