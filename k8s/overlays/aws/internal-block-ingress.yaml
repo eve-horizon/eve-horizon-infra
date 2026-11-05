@@ -78,8 +78,9 @@ metadata:
   labels:
     app.kubernetes.io/name: eve-dashboard-internal
 spec:
+  ingressClassName: nginx
   rules:
-    - host: dashboard.eve.lvh.me
+    - host: dashboard.eve.example.com
       http:
         paths:
           - path: /api/internal

@@ -70,9 +70,11 @@ metadata:
   namespace: eve
   labels:
     app.kubernetes.io/name: eve-dashboard-internal
+  annotations:
+    kubernetes.io/ingress.class: nginx
 spec:
   rules:
-    - host: dashboard.eve.lvh.me
+    - host: dashboard.eve.example.com
       http:
         paths:
           - path: /api/internal

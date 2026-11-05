@@ -93,6 +93,10 @@ for overlay in "${OVERLAYS[@]}"; do
     || fail "$overlay eve-dashboard-internal must serve exactly the dashboard host ($dashboard_host)"
   [[ "$(ingress_class <<<"$dashboard_block")" == "$(ingress_class <<<"$dashboard_ingress")" ]] \
     || fail "$overlay eve-dashboard-internal must use the eve-dashboard ingress class"
+  # A classless Ingress goes to the cluster's default controller (GKE's own on
+  # GCP), not the one fronting the API, and the block would not apply.
+  [[ "$(ingress_class <<<"$dashboard_ingress")" == "$(ingress_class <<<"$api_ingress")" ]] \
+    || fail "$overlay eve-dashboard must use the same ingress class as eve-api"
   [[ "$(ingress_tls <<<"$dashboard_block")" == "$(ingress_tls <<<"$dashboard_ingress")" ]] \
     || fail "$overlay eve-dashboard-internal TLS must match eve-dashboard"
   dashboard_paths="$(ingress_paths <<<"$dashboard_block")"

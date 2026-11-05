@@ -744,7 +744,8 @@ Service with no endpoints (503), keeping `/internal/registry/token`, the
 registry's token realm, on the API host.
 
 - **Scope:** `k8s/overlays/{aws,aws-eks,gcp}/internal-block-ingress.yaml`
-  (new), `k8s/overlays/{aws,aws-eks,gcp}/kustomization.yaml`,
+  (new), `k8s/overlays/{aws,gcp}/dashboard-ingress-patch.yaml` (new),
+  `k8s/overlays/{aws,aws-eks,gcp}/kustomization.yaml`,
   `scripts/validate-template.sh`, `scripts/validate-template.d/` (new)
 - **How it works:** a second Ingress on the API host routes
   `/internal/registry/token` (Exact) to `eve-api` and the `/internal` prefix
@@ -757,10 +758,19 @@ registry's token realm, on the API host.
   API's Fastify routes are case-sensitive, so `/internal` needs no variants).
   No new Pods, and no cert-manager annotation (the API host reuses
   `eve-api-tls` where the overlay has one).
+- **Dashboard exposure changes (gcp, aws):** the base `eve-dashboard`
+  Ingress had no class there, so ingress-nginx (installed without a default
+  class) ignored it and the block could not front it. On GKE the built-in
+  controller claimed it instead and built a separate Google load balancer
+  outside the platform DNS; on k3s it went to the default controller
+  (Traefik). New `dashboard-ingress-patch.yaml` files give it the API's
+  class (`nginx`) and the host `dashboard.<domain>`, so the dashboard is now
+  served next to the API, and GKE removes the extra load balancer. No TLS is
+  added; add it as for the API if you serve the dashboard publicly.
 - **Sync impact:**
   - `k8s/overlays/` — manual merge. Copy your `eve-api` and `eve-dashboard`
     Ingress host, class and TLS into the two new Ingresses (template CI
-    checks they match). If you replaced ingress-nginx with another
+    checks they match, and that the dashboard uses the API's class). If you replaced ingress-nginx with another
     controller, keep the same class on all three. In-cluster callers use
     `http://eve-api:4701` and are unaffected; anything outside the cluster
     that calls `/internal/*` other than the registry token endpoint through
