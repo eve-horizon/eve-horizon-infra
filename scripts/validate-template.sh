@@ -38,6 +38,15 @@ rendered_doc() {
   ' "$file"
 }
 
+# Terraform 1.10 evaluates both operands of && and ||, so a null check there
+# cannot guard a function call: `var.x != null && trimspace(var.x) != ""` fails
+# when var.x is null. Guard with a conditional (`var.x == null ? ... : ...`).
+if git -C "$REPO_ROOT" grep -n -E \
+  '[=!]=[[:space:]]*null[[:space:]]*(&&|\|\|)[[:space:]]*[a-z_]+\(' \
+  -- '*.tf'; then
+  fail "Terraform guards a function call with && or || on a null check"
+fi
+
 work_root="$(mktemp -d)"
 trap 'rm -rf "$work_root"' EXIT
 

@@ -86,6 +86,8 @@ variable "compute_model" {
   description = "Compute model: k3s (single EC2) or eks (managed cluster)"
   type        = string
   default     = "k3s"
+  # null means "use the default"; main.tf passes this value to trimspace().
+  nullable = false
   validation {
     condition     = contains(["k3s", "eks"], var.compute_model)
     error_message = "compute_model must be 'k3s' or 'eks'"

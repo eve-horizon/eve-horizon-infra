@@ -26,6 +26,24 @@ Each entry includes **Sync impact** to guide what downstream agents need to do.
   - `scripts/validate-template.sh` — template-only CI assertion that every
     overlay renders `NODE_ENV=production` on `eve-api`
 
+### fix: keep Terraform plans working when canonical overrides are unset
+
+- **Scope:** `terraform/gcp/main.tf`, `terraform/aws/main.tf`,
+  `terraform/aws/variables.tf`, `scripts/validate-template.sh`
+- **Why:** the `effective_*` locals guarded `trimspace()` with
+  `var.x != null && ...`. Terraform 1.10 evaluates both operands of `&&`, so
+  leaving `region`, `compute_type`, `database_instance_class` or
+  `ollama_compute_type` unset (the default) failed `terraform plan` with
+  "argument must not be null". The guards are now conditionals, with the same
+  result for blank and set values. AWS `compute_model` is now `nullable = false`,
+  so an explicit `null` means the `k3s` default instead of an error.
+- **Sync impact:**
+  - `terraform/{aws,gcp}/main.tf`, `terraform/aws/variables.tf` — manual merge
+    (ask tier); no resource changes, plans are unchanged where they already
+    worked
+  - `scripts/validate-template.sh` — auto-sync safe; fails on any `.tf` line
+    that guards a function call with `&&` or `||` on a null check
+
 ## [2026-08-25]
 
 ### fix: preserve migration safety and complete auth bootstrap overlays
