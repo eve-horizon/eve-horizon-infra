@@ -126,9 +126,11 @@ if git -C "$REPO_ROOT" grep -n -I -i -E \
   fail "template contains instance-specific domains, IDs, or names"
 fi
 
-# Print the rendered document of the given kind and metadata.name.
+# rendered_doc KIND NAME FILE: print the rendered document of that kind and
+# metadata.name. Same argument order as validate-template.d/00-helpers.sh,
+# which redefines it when the per-change checks are sourced at the end.
 rendered_doc() {
-  local file="$1" kind="$2" name="$3"
+  local kind="$1" name="$2" file="$3"
   awk -v kind="$kind" -v name="$name" '
     /^---$/ { if (k && n) printf "%s", buf; buf = ""; k = 0; n = 0; next }
     { buf = buf $0 "\n" }
@@ -202,7 +204,7 @@ for overlay in "${OVERLAYS[@]}"; do
 
   # EVE-001: the API must run in production mode (bootstrap closed once an
   # admin exists; token required before that).
-  rendered_doc "$rendered" Deployment eve-api \
+  rendered_doc Deployment eve-api "$rendered" \
     | grep -A1 -E '^ +- name: NODE_ENV$' \
     | grep -Eq '^ +value: "?production"?$' \
     || fail "$overlay render does not set NODE_ENV=production on eve-api"
