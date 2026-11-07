@@ -1,0 +1,215 @@
+# Admission guards for Eve's controller identities (ValidatingAdmissionPolicy,
+# GA since Kubernetes 1.30; GKE's REGULAR channel is well past it).
+#
+# The worker needs broad RBAC to deploy apps into environment namespaces, and
+# job code can reach its token (in-process script steps). These policies
+# refuse what an app deploy never needs, so that token cannot escalate to the
+# node or the cluster: privileged or host-level pods, extra capabilities,
+# public Services or external IPs, writes in system namespaces, and any write
+# in the eve namespace other than runner pods and their workspace claims.
+#
+# Admission cannot refuse reads. The worker token can still read Secrets in
+# eve (eve-app, eve-api-keys) and in app namespaces; that residual closes
+# only when job code no longer runs in the worker pod (runner-pod scripts).
+#
+# They match requests by Eve's controller service accounts only. Operator
+# applies (kubectl, CI) and cluster components are unaffected. eve-api is not
+# listed: it manages ExternalName Services in eve-tunnels (private endpoints).
+#
+# Compatible with the GKE overlay as shipped: EVE_COMPUTE_MODEL=gke makes
+# stable egress (hostNetwork pods) a no-op, and EVE_TCP_INGRESS_PROVIDER is
+# unset (none), so no LoadBalancer Services are rendered. Enabling either
+# feature requires relaxing the matching rule below.
+#
+# Kustomize stamps namespace "eve" on these cluster-scoped kinds; the API
+# server ignores it.
+
+# 1. No privileged, host-namespace or hostPath workloads from Eve controllers.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: eve-controller-workload-guard
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods"]
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+      - apiGroups: ["batch"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["jobs", "cronjobs"]
+  matchConditions:
+    - name: eve-controllers
+      expression: >-
+        request.userInfo.username in ['system:serviceaccount:eve:eve-worker',
+        'system:serviceaccount:eve:eve-orchestrator', 'system:serviceaccount:eve:eve-agent-runtime',
+        'system:serviceaccount:eve:eve-runner']
+  variables:
+    - name: podSpec
+      expression: >-
+        object.kind == 'Pod' ? object.spec :
+        (object.kind == 'CronJob' ? object.spec.jobTemplate.spec.template.spec : object.spec.template.spec)
+    - name: containers
+      expression: >-
+        variables.podSpec.containers +
+        (has(variables.podSpec.initContainers) ? variables.podSpec.initContainers : [])
+  validations:
+    - expression: "!has(variables.podSpec.hostNetwork) || !variables.podSpec.hostNetwork"
+      message: "Eve controllers may not create hostNetwork pods"
+    - expression: "!has(variables.podSpec.hostPID) || !variables.podSpec.hostPID"
+      message: "Eve controllers may not create hostPID pods"
+    - expression: "!has(variables.podSpec.hostIPC) || !variables.podSpec.hostIPC"
+      message: "Eve controllers may not create hostIPC pods"
+    - expression: "!has(variables.podSpec.volumes) || variables.podSpec.volumes.all(v, !has(v.hostPath))"
+      message: "Eve controllers may not mount hostPath volumes"
+    - expression: >-
+        variables.containers.all(c, !has(c.securityContext) ||
+        !has(c.securityContext.privileged) || !c.securityContext.privileged)
+      message: "Eve controllers may not create privileged containers"
+    - expression: >-
+        variables.containers.all(c, !has(c.securityContext) ||
+        !has(c.securityContext.capabilities) || !has(c.securityContext.capabilities.add) ||
+        c.securityContext.capabilities.add.all(x, x in ['AUDIT_WRITE', 'CHOWN', 'DAC_OVERRIDE',
+        'FOWNER', 'FSETID', 'KILL', 'MKNOD', 'NET_BIND_SERVICE', 'SETFCAP', 'SETGID', 'SETPCAP',
+        'SETUID', 'SYS_CHROOT']))
+      message: "Eve controllers may only add baseline capabilities"
+    - expression: "variables.containers.all(c, !has(c.ports) || c.ports.all(p, !has(p.hostPort) || p.hostPort == 0))"
+      message: "Eve controllers may not use hostPort"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: eve-controller-workload-guard
+spec:
+  policyName: eve-controller-workload-guard
+  validationActions: [Deny]
+---
+# 2. Eve controllers stay out of system namespaces, cannot change the eve
+#    namespace object itself, and cannot open LoadBalancer, NodePort or
+#    ExternalName Services or claim external IPs (CVE-2020-8554). Add your
+#    own system namespaces to the list.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: eve-controller-scope-guard
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["*"]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["*"]
+  matchConditions:
+    - name: eve-controllers
+      expression: >-
+        request.userInfo.username in ['system:serviceaccount:eve:eve-worker',
+        'system:serviceaccount:eve:eve-orchestrator', 'system:serviceaccount:eve:eve-agent-runtime',
+        'system:serviceaccount:eve:eve-runner']
+  variables:
+    # The namespace a write lands in; for Namespace objects, the namespace itself.
+    - name: target
+      expression: "request.resource.resource == 'namespaces' ? request.name : request.namespace"
+    - name: systemNamespace
+      expression: >-
+        variables.target in ['default', 'cert-manager', 'ingress-nginx', 'traefik', 'eve-tunnels'] ||
+        variables.target.startsWith('kube-') || variables.target.startsWith('gke-') ||
+        variables.target.startsWith('gmp-')
+  validations:
+    - expression: "!variables.systemNamespace"
+      message: "Eve controllers may not change resources in system namespaces"
+    - expression: "request.resource.resource != 'namespaces' || request.name != 'eve'"
+      message: "Eve controllers may not change the eve namespace"
+    - expression: >-
+        request.resource.group != '' || request.resource.resource != 'services' ||
+        request.operation == 'DELETE' || !has(object.spec.type) || object.spec.type == 'ClusterIP'
+      message: "Eve controllers may only create ClusterIP services"
+    - expression: >-
+        request.resource.group != '' || request.resource.resource != 'services' ||
+        request.operation == 'DELETE' || !has(object.spec.externalIPs) || size(object.spec.externalIPs) == 0
+      message: "Eve controllers may not set Service externalIPs"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: eve-controller-scope-guard
+spec:
+  policyName: eve-controller-scope-guard
+  validationActions: [Deny]
+---
+# 3. In the eve namespace, Eve controllers may only manage runner pods and
+#    their workspace claims, exactly as both runners create them
+#    (apps/worker and apps/agent-runtime src/invoke/k8s-runner.ts): pods
+#    eve-runner-* labelled eve.type=runner, running as eve-runner, mounting
+#    only emptyDir volumes, their eve-ws-* claim and the org filesystem claim;
+#    and PVCs eve-ws-* labelled eve.type=runner. Everything else in eve (the
+#    API and registry Deployments, registry config and certificates, Secrets,
+#    ConfigMaps, Services, Jobs) belongs to the operator. The kaniko build
+#    backend (EVE_BUILD_BACKEND=kaniko) writes a Secret and a Job in eve, so
+#    it is refused; the overlay uses BuildKit. A runner pod that mounts an API
+#    token (EVE_RUNNER_AUTOMOUNT_SERVICE_ACCOUNT_TOKEN=true) is refused too.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: eve-controller-platform-namespace-guard
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: eve
+    resourceRules:
+      - apiGroups: ["*"]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["*", "*/*"]
+  matchConditions:
+    - name: eve-controllers
+      expression: >-
+        request.userInfo.username in ['system:serviceaccount:eve:eve-worker',
+        'system:serviceaccount:eve:eve-orchestrator', 'system:serviceaccount:eve:eve-agent-runtime',
+        'system:serviceaccount:eve:eve-runner']
+  variables:
+    - name: subject
+      expression: "request.operation == 'DELETE' ? oldObject : object"
+    - name: runnerLabelled
+      expression: >-
+        request.resource.group == '' && request.subResource == '' &&
+        has(variables.subject.metadata.labels) && 'eve.type' in variables.subject.metadata.labels &&
+        variables.subject.metadata.labels['eve.type'] == 'runner'
+    - name: runnerClaim
+      expression: >-
+        variables.runnerLabelled && request.resource.resource == 'persistentvolumeclaims' &&
+        variables.subject.metadata.name.startsWith('eve-ws-')
+    - name: runnerPod
+      expression: >-
+        variables.runnerLabelled && request.resource.resource == 'pods' &&
+        variables.subject.metadata.name.startsWith('eve-runner-') &&
+        (request.operation == 'DELETE' ||
+        (has(object.spec.serviceAccountName) && object.spec.serviceAccountName == 'eve-runner' &&
+        (!has(object.spec.volumes) || object.spec.volumes.all(v, has(v.emptyDir) ||
+        (has(v.persistentVolumeClaim) && (v.persistentVolumeClaim.claimName == 'eve-org-fs-org-default' ||
+        v.persistentVolumeClaim.claimName.startsWith('eve-ws-')))))))
+  validations:
+    # Cluster-scoped requests always reach a namespaceSelector policy; only
+    # objects inside eve are judged here (the scope guard covers the eve
+    # Namespace object itself).
+    - expression: "request.namespace != 'eve' || variables.runnerPod || variables.runnerClaim"
+      message: >-
+        In the eve namespace Eve controllers may only manage runner pods (eve-runner-*, label
+        eve.type=runner, service account eve-runner) and their workspace claims (eve-ws-*)
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: eve-controller-platform-namespace-guard
+spec:
+  policyName: eve-controller-platform-namespace-guard
+  validationActions: [Deny]

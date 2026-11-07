@@ -1,0 +1,67 @@
+# Keep tenant ingresses off platform hosts (ValidatingAdmissionPolicy, GA
+# since Kubernetes 1.30).
+#
+# An Ingress written by an Eve controller, or by anyone into an environment
+# namespace (label eve.env_id, set by the worker), may use a host under the
+# platform domain only if it is under the app domain, never a wildcard, never
+# host-less and never a default backend. Custom domains outside the platform
+# domain are unaffected; the platform's own ingresses in the eve namespace,
+# written by operators, are unaffected.
+#
+# Set the two domains below (placeholders, like the rest of this overlay):
+#   platformDomain: the Terraform `domain` (api.<domain> is the API host)
+#   appDomain:      the worker's EVE_DEFAULT_DOMAIN, apps.<domain>
+#
+# Kustomize stamps namespace "eve" on these cluster-scoped kinds; the API
+# server ignores it.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: eve-ingress-host-guard
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["networking.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["ingresses"]
+  variables:
+    - name: platformDomain
+      expression: "'eve.example.com'"
+    - name: appDomain
+      expression: "'apps.eve.example.com'"
+    - name: inScope
+      expression: >-
+        request.userInfo.username in ['system:serviceaccount:eve:eve-worker',
+        'system:serviceaccount:eve:eve-orchestrator', 'system:serviceaccount:eve:eve-agent-runtime',
+        'system:serviceaccount:eve:eve-runner'] ||
+        (namespaceObject != null && has(namespaceObject.metadata.labels) &&
+        'eve.env_id' in namespaceObject.metadata.labels)
+  validations:
+    - expression: >-
+        !variables.inScope || !has(object.spec.rules) || object.spec.rules.all(r,
+        has(r.host) && !r.host.startsWith('*') &&
+        (!(r.host == variables.platformDomain || r.host.endsWith('.' + variables.platformDomain)) ||
+        r.host.endsWith('.' + variables.appDomain)))
+      messageExpression: >-
+        'Tenant ingress hosts must be set, without wildcards, and under ' + variables.appDomain +
+        ' when they are under ' + variables.platformDomain + ' (platform hosts are reserved)'
+    - expression: >-
+        !variables.inScope || !has(object.spec.tls) || object.spec.tls.all(t, !has(t.hosts) ||
+        t.hosts.all(h, !h.startsWith('*') &&
+        (!(h == variables.platformDomain || h.endsWith('.' + variables.platformDomain)) ||
+        h.endsWith('.' + variables.appDomain))))
+      messageExpression: >-
+        'Tenant ingress TLS hosts under ' + variables.platformDomain + ' must be under ' +
+        variables.appDomain + ', without wildcards'
+    - expression: "!variables.inScope || !has(object.spec.defaultBackend)"
+      message: "Tenant ingresses may not set a default backend"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: eve-ingress-host-guard
+spec:
+  policyName: eve-ingress-host-guard
+  validationActions: [Deny]

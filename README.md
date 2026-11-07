@@ -13,6 +13,8 @@ Infrastructure-as-code template for deploying the [Eve Horizon](https://github.c
 | [Helm](https://helm.sh/docs/intro/install/) | v3 | Install cert-manager |
 | [gh](https://cli.github.com/) | any | GitHub CLI (for automated upgrade PRs) |
 | bash | 4+ | Run `eve-infra` and setup scripts |
+| python3 | 3.8+ | `eve-infra secrets sync` (renders the Kubernetes secrets) |
+| [jq](https://jqlang.org/) | 1.6+ | `eve-infra secrets show` and `db status`/`db connect` |
 | AWS CLI | v2 | Configure credentials for AWS deployments |
 | [gcloud CLI](https://cloud.google.com/sdk/docs/install) | latest | Configure credentials for GCP deployments |
 
@@ -63,7 +65,7 @@ eve-horizon-infra/
 │   └── overlays/
 │       ├── aws/               # AWS-specific patches (k3s + RDS wiring)
 │       ├── aws-eks/           # AWS EKS patches (nginx ingress + registry)
-│       └── gcp/               # GCP-specific patches (GKE + Cloud SQL wiring)
+│       └── gcp/               # GCP-specific patches (GKE + Cloud SQL wiring + registry)
 ├── terraform/
 │   ├── aws/                   # AWS root module (k3s or EKS, RDS, Route53)
 │   │   ├── providers.tf

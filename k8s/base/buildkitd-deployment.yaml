@@ -17,13 +17,17 @@ spec:
     spec:
       containers:
         - name: buildkitd
-          image: moby/buildkit:v0.12.5
+          # v0.34.1 by digest (multi-arch index). v0.12.5 bundled a runc
+          # without the 2025 container-escape fixes.
+          image: moby/buildkit:v0.34.1@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c
           args:
             - --addr
             - tcp://0.0.0.0:1234
             - --oci-worker-gc
-            - --oci-worker-gc-keepstorage
-            - "12000"
+            # GC limits in MB: Reserved,MinFree,MaxUsed. Sized for the 20Gi
+            # buildkitd-cache volume; an overlay that resizes the volume must
+            # keep MinFree + MaxUsed below it (template CI checks each render).
+            - --oci-worker-gc-keepstorage=2000,3000,15000
           ports:
             - name: grpc
               containerPort: 1234

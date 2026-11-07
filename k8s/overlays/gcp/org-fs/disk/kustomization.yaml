@@ -1,0 +1,55 @@
+# Org filesystem profile "disk" (small): a 10 GiB balanced persistent disk
+# (GKE's built-in standard-rwo class), about GBP 1/month instead of Filestore's
+# GBP 48 to 146 (see ../filestore/kustomization.yaml).
+#
+# A ReadWriteOnce disk attaches to one node, and any number of pods on that
+# node can mount it. So this profile requires every agent runtime replica to
+# run on the same node (the pod affinity below); a replica that cannot fit
+# there stays Pending instead of failing to attach elsewhere. The rest of the
+# agents pool still serves BuildKit; set agent_node_max = 1 in terraform.tfvars
+# if nothing else needs a second agents node.
+#
+# Use it only while the agent runtime is the one workload that mounts the
+# claim. Worker runner pods mount it too and carry no node selector, so they
+# would not start: keep EVE_SCRIPT_K8S_RUNNER unset, and keep
+# EVE_AGENT_RUNTIME_URL set on the orchestrator so agent jobs go to the agent
+# runtime rather than worker runner pods.
+#
+# Switching profiles on a running instance: a claim's storage class and access
+# mode are immutable, so `kubectl apply` refuses the change. Back up /org, then
+#   kubectl -n eve scale statefulset/eve-agent-runtime --replicas=0
+#   kubectl -n eve delete pvc eve-org-fs-org-default   # deletes the volume too
+# switch the line in ../../kustomization.yaml, run `eve-infra deploy`, and
+# restore /org before giving the instance work again.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+patches:
+  - target:
+      kind: PersistentVolumeClaim
+      name: eve-org-fs-org-default
+    patch: |
+      - op: replace
+        path: /spec/accessModes
+        value: ["ReadWriteOnce"]
+      - op: add
+        path: /spec/storageClassName
+        value: standard-rwo
+      - op: replace
+        path: /spec/resources/requests/storage
+        value: 10Gi
+  - patch: |
+      apiVersion: apps/v1
+      kind: StatefulSet
+      metadata:
+        name: eve-agent-runtime
+        namespace: eve
+      spec:
+        template:
+          spec:
+            affinity:
+              podAffinity:
+                requiredDuringSchedulingIgnoredDuringExecution:
+                  - labelSelector:
+                      matchLabels:
+                        app.kubernetes.io/name: eve-agent-runtime
+                    topologyKey: kubernetes.io/hostname

@@ -1,0 +1,121 @@
+# Ingress NetworkPolicies for the services that have no authentication of
+# their own. Agent code (agent-runtime and runner pods) and user apps (other
+# namespaces) must not reach them. Enforced when the cluster runs Dataplane V2
+# (terraform enable_dataplane_v2, output network_policy_enforced); inert,
+# and harmless, on clusters without it.
+#
+# Only ingress is restricted, so egress (DNS, Cloud SQL, the registry, the
+# Eve API, BuildKit, app namespaces) is unchanged. Kubelet probes from the
+# node are always allowed. Services that are public through the ingress
+# controller anyway and authenticate every request (eve-api, eve-gateway,
+# eve-sso, eve-dashboard, supabase-auth, eve-registry) get no policy here.
+# BuildKit's policy (worker only) lives in k8s/base.
+#
+# Callers, from the platform source: the API and orchestrator call the worker
+# (WORKER_URL); the orchestrator calls the agent runtime
+# (EVE_AGENT_RUNTIME_URL); the worker and the agent runtime drive the runner
+# pods they launch over the pod IP. The API and worker are also allowed to the
+# agent runtime and orchestrator, which hold no secrets those callers lack.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: eve-worker-ingress
+  namespace: eve
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: eve-worker
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: eve-api
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: eve-orchestrator
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: eve-agent-runtime-ingress
+  namespace: eve
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: eve-agent-runtime
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: eve-orchestrator
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: eve-api
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: eve-worker
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: eve-orchestrator-ingress
+  namespace: eve
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: eve-orchestrator
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: eve-api
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: eve-worker
+---
+# Runner pods (job code, label set by the worker and agent-runtime runners).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: eve-runner-ingress
+  namespace: eve
+spec:
+  podSelector:
+    matchLabels:
+      eve.type: runner
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: eve-worker
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: eve-agent-runtime
+---
+# Mailpit keeps every message it catches, magic links included. Only the
+# senders may reach it (SMTP); read the inbox with kubectl port-forward.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mailpit-ingress
+  namespace: eve
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: mailpit
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: eve-api
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: supabase-auth
+      ports:
+        - protocol: TCP
+          port: 1025

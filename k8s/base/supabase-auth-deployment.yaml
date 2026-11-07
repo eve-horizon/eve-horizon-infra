@@ -33,10 +33,12 @@ spec:
               value: "9999"
             - name: GOTRUE_API_PORT
               value: "9999"
+            # The API accepts any token signed with this secret, so it lives
+            # in the API-only secret; GoTrue reads just this one key from it.
             - name: GOTRUE_JWT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: eve-app
+                  name: eve-api-keys
                   key: SUPABASE_JWT_SECRET
             - name: GOTRUE_JWT_EXP
               value: "3600"

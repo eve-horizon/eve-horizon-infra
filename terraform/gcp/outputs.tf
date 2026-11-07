@@ -5,6 +5,11 @@ output "cluster_name" {
   value       = module.gke.cluster_name
 }
 
+output "network_policy_enforced" {
+  description = "Whether the cluster enforces NetworkPolicy (Dataplane V2). If false, the overlay NetworkPolicies are inert; see CHANGELOG 2026-11-05."
+  value       = module.gke.network_policy_enforced
+}
+
 output "kubeconfig_command" {
   description = "Command to configure kubectl"
   value       = "gcloud container clusters get-credentials ${module.gke.cluster_name} --zone ${var.gcp_zone} --project ${var.gcp_project_id}"
@@ -15,10 +20,12 @@ output "ingress_ip" {
   value       = module.gke.ingress_ip
 }
 
-output "database_url" {
-  description = "PostgreSQL connection URL"
-  value       = "postgres://${var.db_username}:${var.db_password}@${module.sql.private_ip}:5432/${var.db_name}"
-  sensitive   = true
+# No database_url output: it would copy the DB password into another output
+# and print it with `terraform output -json`. Build DATABASE_URL from
+# database_host and your tfvars (DEPLOYMENT.md, step 4).
+output "database_host" {
+  description = "PostgreSQL host for DATABASE_URL (Cloud SQL private IP, port 5432)"
+  value       = module.sql.private_ip
 }
 
 output "cloud_sql_private_ip" {
@@ -27,8 +34,8 @@ output "cloud_sql_private_ip" {
 }
 
 output "api_url" {
-  description = "Eve Horizon API URL"
-  value       = "https://${var.domain}"
+  description = "Eve Horizon API URL (api.<domain>, the api_host convention in config/platform.yaml)"
+  value       = "https://api.${var.domain}"
 }
 
 output "ssh_command" {
@@ -51,9 +58,24 @@ output "storage_internal_bucket" {
   value       = module.storage.internal_bucket_name
 }
 
+output "storage_db_snapshot_bucket" {
+  description = "GCS bucket for managed-database snapshots"
+  value       = module.storage.db_snapshot_bucket_name
+}
+
 output "storage_org_bucket_prefix" {
   description = "GCS bucket prefix for per-org storage (buckets created dynamically)"
   value       = module.storage.org_bucket_prefix
+}
+
+output "storage_app_bucket_prefix" {
+  description = "GCS bucket prefix for per-app storage (EVE_STORAGE_APP_BUCKET_PREFIX on the worker)"
+  value       = module.storage.app_bucket_prefix
+}
+
+output "storage_agent_runtime_service_account_email" {
+  description = "Agent runtime service account email (Workload Identity annotation for eve-agent-runtime)"
+  value       = module.storage.agent_runtime_service_account_email
 }
 
 output "next_steps" {
@@ -73,13 +95,13 @@ output "next_steps" {
        ./scripts/setup.sh
 
     4. Configure Eve CLI:
-       export EVE_API_URL=https://${var.domain}
+       export EVE_API_URL=https://api.${var.domain}
        eve system health
 
     5. Deploy platform:
        ./bin/eve-infra deploy
 
-    DNS: ${var.domain} -> ${module.gke.ingress_ip}
+    DNS: ${join(", ", module.dns.platform_fqdns)}, *.apps.${var.domain} -> ${module.gke.ingress_ip}
     Database: ${module.sql.private_ip}
   EOT
 }

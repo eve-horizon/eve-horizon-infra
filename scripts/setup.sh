@@ -10,6 +10,7 @@
 # Prerequisites:
 #   - config/kubeconfig.yaml configured to reach your target cluster
 #   - helm v3 installed (for cert-manager)
+#   - python3 (renders the Kubernetes secrets from secrets.env)
 #   - config/secrets.env populated (see config/secrets.env.example)
 #
 # Usage:
@@ -37,6 +38,12 @@ COMPUTE_MODEL="$(sed -n '/^compute:/,/^[^ ]/{s/^  model: *//p;}' "$CONFIG_FILE" 
 COMPUTE_MODEL="${COMPUTE_MODEL:-k3s}"
 NAME_PREFIX="$(sed -n 's/^name_prefix: *//p' "$CONFIG_FILE" | head -1 | sed 's/[[:space:]]*#.*$//' | tr -d '"' | tr -d "'" | xargs)"
 NAME_PREFIX="${NAME_PREFIX:-eve}"
+
+# ingress-nginx Helm chart. Keep it equal to INGRESS_NGINX_CHART_VERSION in
+# .github/workflows/deploy.yml, which reconciles aws-eks clusters to that chart
+# on every deploy. ingress-nginx is retired upstream (no releases after March
+# 2026); see "Ingress controller" in DEPLOYMENT.md before changing it.
+INGRESS_NGINX_CHART_VERSION="${INGRESS_NGINX_CHART_VERSION:-4.14.3}"
 
 # Colors
 if [[ -t 1 ]]; then
@@ -113,7 +120,7 @@ ok "Namespace '${NAMESPACE}' exists."
 # 2. Install nginx-ingress when required by overlay
 # -------------------------------------------------------------------------
 if [ "$CLOUD" = "gcp" ] || [ "$OVERLAY" = "aws-eks" ]; then
-  info "Installing nginx-ingress controller..."
+  info "Installing nginx-ingress controller (chart ${INGRESS_NGINX_CHART_VERSION})..."
   if kubectl get namespace ingress-nginx &>/dev/null; then
     ok "ingress-nginx namespace already exists, skipping install."
   else
@@ -130,11 +137,13 @@ if [ "$CLOUD" = "gcp" ] || [ "$OVERLAY" = "aws-eks" ]; then
       INGRESS_IP="$(terraform -chdir="$REPO_ROOT/terraform/gcp" output -raw ingress_ip 2>/dev/null || true)"
       helm install ingress-nginx ingress-nginx/ingress-nginx \
         --namespace ingress-nginx --create-namespace \
+        --version "$INGRESS_NGINX_CHART_VERSION" \
         ${INGRESS_IP:+--set controller.service.loadBalancerIP="$INGRESS_IP"} \
         --wait
     else
       helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
         --namespace ingress-nginx --create-namespace \
+        --version "$INGRESS_NGINX_CHART_VERSION" \
         --set controller.service.type=LoadBalancer \
         --set controller.service.annotations."service\.beta\.kubernetes\.io/aws-load-balancer-type"=nlb \
         --set controller.service.annotations."service\.beta\.kubernetes\.io/aws-load-balancer-scheme"=internet-facing \
@@ -198,7 +207,7 @@ else
   helm install cert-manager jetstack/cert-manager \
     --namespace cert-manager \
     --create-namespace \
-    --version v1.17.1 \
+    --version v1.21.3 \
     --set crds.enabled=true \
     --wait
 
@@ -271,11 +280,9 @@ ok "Registry: public ECR (platform) + Eve-native (app builds). No pull secret ne
 # -------------------------------------------------------------------------
 info "Syncing application secrets..."
 if [[ -f "$SECRETS_FILE" ]]; then
-  kubectl create secret generic eve-app \
-    --from-env-file="$SECRETS_FILE" \
-    --namespace="$NAMESPACE" \
-    --dry-run=client -o yaml | kubectl apply -f -
-  ok "Secret 'eve-app' created."
+  # One implementation for setup and day-two syncs: it renders eve-app and the
+  # API-only eve-api-keys, and carries multi-line PEM keys intact.
+  "$REPO_ROOT/bin/eve-infra" secrets sync
 else
   warn "Skipping (no secrets.env file)."
 fi

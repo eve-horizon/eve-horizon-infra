@@ -4,6 +4,10 @@ metadata:
   name: eve-worker
   namespace: eve
 ---
+# Runner pods and their workspace claims in the eve namespace (kubectl apply,
+# get and delete from the worker; list and delete from the runner reaper).
+# No pods/exec: nothing in the worker execs into pods, and exec in this
+# namespace would reach the privileged BuildKit pod.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -13,19 +17,24 @@ rules:
   - apiGroups: [""]
     resources:
       - pods
-      - pods/status
-      - pods/exec
       - persistentvolumeclaims
       - services
     verbs:
       - get
       - list
-      - watch
       - create
       - delete
       - patch
       - update
 ---
+# App environments. The worker creates and deletes environment namespaces and
+# applies Deployments, Services, Ingresses, ConfigMaps, Secrets, PVCs and Jobs
+# in them. It never watches, never lists Secrets, and never creates
+# DaemonSets, StatefulSets, ReplicaSets or CronJobs, so those are not granted.
+# Admission guards (overlays/gcp/admission-policies.yaml) refuse privileged
+# or host-level pods, writes in system namespaces, and any write in eve other
+# than runner pods and their claims. They cannot refuse reads: this identity
+# still reads Secrets in eve until job code leaves the worker pod.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -37,7 +46,6 @@ rules:
     verbs:
       - get
       - list
-      - watch
       - create
       - delete
       - patch
@@ -45,15 +53,21 @@ rules:
   - apiGroups: [""]
     resources:
       - pods
-      - pods/status
       - persistentvolumeclaims
       - services
       - configmaps
-      - secrets
     verbs:
       - get
       - list
-      - watch
+      - create
+      - delete
+      - patch
+      - update
+  - apiGroups: [""]
+    resources:
+      - secrets
+    verbs:
+      - get
       - create
       - delete
       - patch
@@ -61,13 +75,9 @@ rules:
   - apiGroups: ["apps"]
     resources:
       - deployments
-      - replicasets
-      - statefulsets
-      - daemonsets
     verbs:
       - get
       - list
-      - watch
       - create
       - delete
       - patch
@@ -75,11 +85,9 @@ rules:
   - apiGroups: ["batch"]
     resources:
       - jobs
-      - cronjobs
     verbs:
       - get
       - list
-      - watch
       - create
       - delete
       - patch
@@ -90,7 +98,6 @@ rules:
     verbs:
       - get
       - list
-      - watch
       - create
       - delete
       - patch

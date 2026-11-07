@@ -7,6 +7,7 @@ resource "google_sql_database_instance" "main" {
   name             = "${var.name_prefix}-postgres"
   database_version = "POSTGRES_15"
 
+  # Terraform-side guard: refuses `terraform destroy` and replacement.
   deletion_protection = var.deletion_protection
 
   settings {
@@ -15,6 +16,10 @@ resource "google_sql_database_instance" "main" {
     disk_autoresize   = true
     disk_size         = 20
     disk_type         = "PD_SSD"
+
+    # Google-side guard: Cloud SQL refuses deletion from the console, gcloud
+    # or the API. Changing it is an in-place update.
+    deletion_protection_enabled = var.deletion_protection
 
     ip_configuration {
       ipv4_enabled    = false
@@ -47,5 +52,7 @@ resource "google_sql_database" "main" {
 resource "google_sql_user" "main" {
   name     = var.db_username
   instance = google_sql_database_instance.main.name
+  # Stored in state. Once Terraform 1.11 is the minimum, switch to the
+  # write-only password_wo (with password_wo_version) to keep it out.
   password = var.db_password
 }

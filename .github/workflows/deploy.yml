@@ -35,6 +35,9 @@ permissions:
 
 env:
   NAMESPACE: eve
+  # How long each rollout may take. The worker can need minutes to boot; set
+  # the repository variable EVE_ROLLOUT_TIMEOUT (e.g. 15m) to change it.
+  ROLLOUT_TIMEOUT: ${{ vars.EVE_ROLLOUT_TIMEOUT || '600s' }}
 
 jobs:
   deploy:
@@ -90,6 +93,12 @@ jobs:
       # -----------------------------------------------------------------------
       - name: Resolve version
         id: version
+        # Inputs reach the script through the environment, never through
+        # ${{ }} expansion inside `run:`, which would splice the raw text
+        # into the shell script before bash parses it.
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          CONFIG_VERSION: ${{ steps.config.outputs.version }}
         run: |
           VERSION=""
 
@@ -99,13 +108,20 @@ jobs:
           fi
 
           # 2. From workflow_dispatch input
-          if [[ -n "${{ inputs.version }}" ]]; then
-            VERSION="${{ inputs.version }}"
+          if [[ -n "$INPUT_VERSION" ]]; then
+            VERSION="$INPUT_VERSION"
           fi
 
           # 3. Fallback to config/platform.yaml
           if [[ -z "$VERSION" ]]; then
-            VERSION="${{ steps.config.outputs.version }}"
+            VERSION="$CONFIG_VERSION"
+          fi
+
+          # Later steps put VERSION into perl, yq and git commands; accept
+          # only a release version (optionally with a pre-release suffix).
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Invalid release version; expected e.g. 0.1.28"
+            exit 1
           fi
 
           echo "Deploying version: $VERSION"
@@ -118,6 +134,19 @@ jobs:
         uses: azure/setup-kubectl@v4
         with:
           version: 'v1.29.0'
+
+      # -----------------------------------------------------------------------
+      # Refuse an overlay that still carries template placeholders
+      # (INSTANCE_PREFIX, GCP_PROJECT, YOUR_REGION, REPLACE_*, example.com).
+      # Set the repository variable EVE_ALLOW_PLACEHOLDERS=1 to override.
+      # -----------------------------------------------------------------------
+      - name: Check for template placeholders
+        env:
+          OVERLAY: ${{ steps.config.outputs.overlay }}
+          EVE_ALLOW_PLACEHOLDERS: ${{ vars.EVE_ALLOW_PLACEHOLDERS }}
+        run: |
+          set -euo pipefail
+          kubectl kustomize "k8s/overlays/${OVERLAY}" | scripts/check-placeholders.sh
 
       # -----------------------------------------------------------------------
       # Install Helm (used to deploy OpenCost + its Prometheus backend)
@@ -172,6 +201,7 @@ jobs:
           NAME_PREFIX: ${{ steps.config.outputs.name_prefix }}
           PROJECT_NAME: eve-horizon
           COST_SCOPE: eve-horizon
+          # Keep equal to the default in scripts/setup.sh (template CI checks).
           INGRESS_NGINX_CHART_VERSION: 4.14.3
         run: |
           set -euo pipefail
@@ -457,25 +487,25 @@ jobs:
       # Wait for rollouts
       # -----------------------------------------------------------------------
       - name: Wait for API rollout
-        run: kubectl -n $NAMESPACE rollout status deployment/eve-api --timeout=180s
+        run: kubectl -n $NAMESPACE rollout status deployment/eve-api --timeout="$ROLLOUT_TIMEOUT"
 
       - name: Wait for Orchestrator rollout
-        run: kubectl -n $NAMESPACE rollout status deployment/eve-orchestrator --timeout=180s
+        run: kubectl -n $NAMESPACE rollout status deployment/eve-orchestrator --timeout="$ROLLOUT_TIMEOUT"
 
       - name: Wait for Worker rollout
-        run: kubectl -n $NAMESPACE rollout status deployment/eve-worker --timeout=180s
+        run: kubectl -n $NAMESPACE rollout status deployment/eve-worker --timeout="$ROLLOUT_TIMEOUT"
 
       - name: Wait for Gateway rollout
-        run: kubectl -n $NAMESPACE rollout status deployment/eve-gateway --timeout=180s
+        run: kubectl -n $NAMESPACE rollout status deployment/eve-gateway --timeout="$ROLLOUT_TIMEOUT"
 
       - name: Wait for SSO rollout
-        run: kubectl -n $NAMESPACE rollout status deployment/eve-sso --timeout=180s
+        run: kubectl -n $NAMESPACE rollout status deployment/eve-sso --timeout="$ROLLOUT_TIMEOUT"
 
       - name: Wait for Dashboard rollout
-        run: kubectl -n $NAMESPACE rollout status deployment/eve-dashboard --timeout=180s
+        run: kubectl -n $NAMESPACE rollout status deployment/eve-dashboard --timeout="$ROLLOUT_TIMEOUT"
 
       - name: Wait for Agent Runtime rollout
-        run: kubectl -n $NAMESPACE rollout status statefulset/eve-agent-runtime --timeout=180s
+        run: kubectl -n $NAMESPACE rollout status statefulset/eve-agent-runtime --timeout="$ROLLOUT_TIMEOUT"
 
       # -----------------------------------------------------------------------
       # Health check

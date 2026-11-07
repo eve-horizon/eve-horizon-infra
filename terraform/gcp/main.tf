@@ -6,11 +6,14 @@
 # pools separate core services, agent runtimes, and user-deployed apps.
 
 locals {
-  effective_region                    = (var.region != null && trimspace(var.region) != "") ? trimspace(var.region) : var.gcp_region
-  effective_default_node_machine_type = (var.compute_type != null && trimspace(var.compute_type) != "") ? trimspace(var.compute_type) : var.default_node_machine_type
+  # Canonical overrides win when set and not blank. Test for null with a
+  # conditional, never with &&: Terraform 1.10 evaluates both operands of &&,
+  # so a "!= null &&" guard still calls trimspace(null) and fails the plan.
+  effective_region                    = var.region == null ? var.gcp_region : (trimspace(var.region) != "" ? trimspace(var.region) : var.gcp_region)
+  effective_default_node_machine_type = var.compute_type == null ? var.default_node_machine_type : (trimspace(var.compute_type) != "" ? trimspace(var.compute_type) : var.default_node_machine_type)
   effective_boot_disk_size            = var.compute_disk_size_gb != null ? var.compute_disk_size_gb : var.boot_disk_size
-  effective_db_tier                   = (var.database_instance_class != null && trimspace(var.database_instance_class) != "") ? trimspace(var.database_instance_class) : var.db_tier
-  effective_ollama_machine_type       = (var.ollama_compute_type != null && trimspace(var.ollama_compute_type) != "") ? trimspace(var.ollama_compute_type) : var.ollama_machine_type
+  effective_db_tier                   = var.database_instance_class == null ? var.db_tier : (trimspace(var.database_instance_class) != "" ? trimspace(var.database_instance_class) : var.db_tier)
+  effective_ollama_machine_type       = var.ollama_compute_type == null ? var.ollama_machine_type : (trimspace(var.ollama_compute_type) != "" ? trimspace(var.ollama_compute_type) : var.ollama_machine_type)
   effective_ollama_disk_size          = var.ollama_disk_size_gb != null ? var.ollama_disk_size_gb : var.ollama_disk_size
 }
 
@@ -93,6 +96,9 @@ module "gke" {
   boot_disk_size            = local.effective_boot_disk_size
   allowed_api_cidrs         = var.allowed_api_cidrs
   service_account_email     = google_service_account.gke_nodes.email
+  enable_dataplane_v2       = var.enable_dataplane_v2
+
+  allow_service_external_ips = var.allow_service_external_ips
 }
 
 # -----------------------------------------------------------------------------
@@ -103,9 +109,11 @@ module "gke" {
 module "dns" {
   source = "./modules/dns"
 
-  domain        = var.domain
-  dns_zone_name = var.dns_zone_name
-  public_ip     = module.gke.ingress_ip
+  domain                  = var.domain
+  dns_zone_name           = var.dns_zone_name
+  public_ip               = module.gke.ingress_ip
+  platform_hosts          = var.dns_platform_hosts
+  legacy_wildcard_records = var.dns_legacy_wildcard_records
 }
 
 # -----------------------------------------------------------------------------
@@ -119,6 +127,9 @@ module "storage" {
   name_prefix = var.name_prefix
   location    = local.effective_region
   project_id  = var.gcp_project_id
+
+  # Bind KSAs only after the cluster has created the Workload Identity pool
+  workload_pool = module.gke.workload_pool
 }
 
 # -----------------------------------------------------------------------------

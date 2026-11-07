@@ -1,12 +1,15 @@
-# Workload Identity — KSA for agent-runtime to act as the storage GSA.
+# Workload Identity — KSA for agent-runtime, which has its own GSA.
 # This lets pods authenticate to GCS natively via Application Default Credentials.
-# The eve-api / eve-worker / eve-orchestrator KSAs are defined in base and get the
-# same annotation via strategic patches in kustomization.yaml; eve-agent-runtime has
-# no base ServiceAccount, so it is created here.
+# The agent-runtime GSA (Terraform output storage_agent_runtime_service_account_email)
+# can only read objects in org buckets: agent code runs in this pod, so it must
+# not hold the platform storage GSA that eve-api / eve-worker / eve-orchestrator
+# use. Those KSAs are defined in base and get their annotation via patches in
+# kustomization.yaml; eve-agent-runtime has no base ServiceAccount, so it is
+# created here.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: eve-agent-runtime
   namespace: eve
   annotations:
-    iam.gke.io/gcp-service-account: INSTANCE_PREFIX-eve-storage@GCP_PROJECT.iam.gserviceaccount.com
+    iam.gke.io/gcp-service-account: INSTANCE_PREFIX-eve-agents@GCP_PROJECT.iam.gserviceaccount.com

@@ -85,17 +85,32 @@ openssl rand -hex 32    # -> EVE_INTERNAL_API_KEY
 # Bootstrap token (for initial admin setup)
 openssl rand -hex 32    # -> EVE_BOOTSTRAP_TOKEN
 
-# Database password (also used in terraform.tfvars)
-openssl rand -base64 24 # -> used in DATABASE_URL
+# Database password (also used in terraform.tfvars); URL-safe for DATABASE_URL
+openssl rand -base64 24 | tr -d '/+=' # -> db_password and DATABASE_URL
+
+# Token-signing key. A PEM spans several lines, so it goes in double quotes.
+# Delete the empty EVE_AUTH_PRIVATE_KEY= line from secrets.env, then:
+printf 'EVE_AUTH_PRIVATE_KEY="%s"\n' "$(openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048)" >> config/secrets.env
 ```
 
 Set at minimum:
 
-- `EVE_SECRETS_MASTER_KEY`, `EVE_INTERNAL_API_KEY`, `EVE_BOOTSTRAP_TOKEN`
+- `EVE_SECRETS_MASTER_KEY`, `EVE_INTERNAL_API_KEY`, `EVE_BOOTSTRAP_TOKEN`, `EVE_AUTH_PRIVATE_KEY`
 - `DATABASE_URL` -- constructed from Terraform output after provisioning (see step 4)
-- `GITHUB_TOKEN` -- PAT with `repo`, `read:org` scopes
 
-LLM provider keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, etc.) are managed via the Eve CLI after bootstrap, not as cluster secrets.
+`bin/eve-infra secrets sync` (run by `scripts/setup.sh`) writes two Kubernetes
+secrets from this file: `eve-app`, which every Eve service loads, and
+`eve-api-keys`, which holds the keys marked `[API ONLY]` in the example (the
+secrets master key, the token-signing keys including `SUPABASE_JWT_SECRET`,
+the bootstrap token) and which only the API mounts; GoTrue reads
+`SUPABASE_JWT_SECRET` from it by name. Multi-line values such as PEM keys must be wrapped in
+double quotes; `\n` inside double quotes is also read as a line break.
+
+LLM provider keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, etc.), Claude Code
+tokens and the GitHub token (`GITHUB_TOKEN`) are Eve org secrets, set with the
+Eve CLI after bootstrap (`eve secrets set <KEY> <value> --scope org --org <org-id>`),
+not cluster secrets. Anything you put in `secrets.env` lands in `eve-app` and
+so in every service pod, the agent runtime included.
 
 **Never commit `secrets.env`.** It is already in `.gitignore`.
 
@@ -131,9 +146,14 @@ terraform -chdir="terraform/${CLOUD}" apply    # Type "yes" to confirm
 
 # Save the outputs -- you'll need them
 terraform -chdir="terraform/${CLOUD}" output
-terraform -chdir="terraform/${CLOUD}" output -raw database_url   # -> paste into secrets.env as DATABASE_URL
+terraform -chdir="terraform/${CLOUD}" output -raw database_host  # -> host part of DATABASE_URL
 terraform -chdir="terraform/${CLOUD}" output -raw ssh_command    # -> use to connect to the server
 ```
+
+Build `DATABASE_URL` in `secrets.env` from that host and your `terraform.tfvars`:
+`postgres://<db_username>:<db_password>@<database_host>:5432/<db_name>` (the
+username and database name default to `eve`). Terraform has no output that
+contains the password, so `terraform output -json` never prints it.
 
 Terraform creates cloud networking, managed database, DNS records, and cluster compute for the selected provider.
 
@@ -164,6 +184,24 @@ Prerequisites for this step:
 - `helm` v3 installed (for cert-manager)
 - `config/secrets.env` populated (step 3, with DATABASE_URL from step 4)
 
+#### Ingress controller
+
+On GKE and AWS EKS, setup installs the ingress-nginx controller from a pinned
+Helm chart (`INGRESS_NGINX_CHART_VERSION` in `scripts/setup.sh`, default
+`4.14.3`, the same chart the deploy workflow reconciles aws-eks clusters to).
+Override it for one run with `INGRESS_NGINX_CHART_VERSION=<chart> ./scripts/setup.sh`;
+to change it for good, change both pins together.
+
+ingress-nginx is retired upstream: the Kubernetes project stopped releasing
+it in March 2026 (the final charts are 4.14.5 and 4.15.1), so it receives no
+further bug or security fixes. The template still installs it, but the
+planned successor is the Kubernetes Gateway API, served by a maintained
+implementation (GKE's built-in Gateway controller on GCP, or a portable
+controller such as Traefik or Envoy Gateway). Until the template migrates,
+an instance may run another ingress controller: set the `ingressClassName`
+and annotations in its overlay and the ACME solver class in setup's
+ClusterIssuers to match.
+
 ### 7. Deploy Eve Horizon
 
 ```bash
@@ -178,6 +216,24 @@ bin/eve-infra health
 ```
 
 The deploy command builds manifests from `k8s/overlays/<overlay>/` (`overlay` from `config/platform.yaml`, falling back to `cloud`) and applies them to the cluster, then waits for rollouts to complete.
+It waits up to 600s per workload (the worker can take a few minutes on its
+first boot) and exits non-zero if any rollout has not finished. Set
+`EVE_ROLLOUT_TIMEOUT` (for example `15m`) to change the wait; the deploy
+workflow reads the repository variable of the same name.
+
+The overlays ship with placeholder values that you replace with this
+instance's values before the first deploy: `INSTANCE_PREFIX` (your
+`name_prefix`), `GCP_PROJECT`, `YOUR_REGION`, `REPLACE_*`, and `example.com`
+hosts (your `api_host`, `app_domain`, and the auth, SSO and registry hosts).
+Deploy (and the deploy workflow) renders the overlay first and refuses to
+continue while any of these remain, listing each one with the resources that
+carry it. Check before deploying with:
+
+```bash
+kubectl kustomize k8s/overlays/<overlay> | scripts/check-placeholders.sh
+```
+
+On overlays that run the Eve-native registry for app images (`gcp`, `aws-eks`), deploy then checks that `https://<registry host>/v2/` answers `401` with a `WWW-Authenticate: Bearer realm=` challenge, and fails if it does not: a registry that misses its token-auth config would let anyone push and pull. The host comes from the overlay's `eve-registry` ingress. Keep it, the `realm` in the overlay's `registry-configmap-patch.yaml` (`https://<api_host>/internal/registry/token`) and `EVE_REGISTRY_HOST` in `secrets.env` in step. The registry trusts tokens signed by `EVE_REGISTRY_SIGNING_KEY` (an RSA key); `scripts/setup.sh` loads the matching certificate into the `eve-registry-cert` secret from `REGISTRY_SIGNING_CERT_PATH`. On a first install, before DNS and a certificate exist for the registry host, run `bin/eve-infra deploy --skip-registry-check` once, then deploy again without it.
 
 ### 8. Verify
 
@@ -247,13 +303,17 @@ When you add or rotate secrets:
 # Edit the secrets file
 $EDITOR config/secrets.env
 
-# Push to the cluster
+# Push to the cluster (eve-app + the API-only eve-api-keys)
 bin/eve-infra secrets sync
 
 # Restart services to pick up new values
 bin/eve-infra restart api
 bin/eve-infra restart worker
 ```
+
+On a cluster deployed before the `eve-api-keys` split, run `bin/eve-infra deploy`
+once before the first sync: the sync moves the API's keys out of `eve-app` and
+refuses to run until the API Deployment loads `eve-api-keys`.
 
 To see which keys are currently configured in the cluster:
 
@@ -389,6 +449,15 @@ Common causes:
 - `DATABASE_URL` is wrong or the database is unreachable
 - Missing required secrets (`EVE_SECRETS_MASTER_KEY`, `EVE_INTERNAL_API_KEY`)
 - Database migrations have not been run (`bin/eve-infra db migrate`)
+
+### Deploy Fails the Registry Auth Check
+
+`bin/eve-infra deploy` stops when the registry does not demand a bearer token.
+
+- **HTTP 200:** the registry is serving without its token-auth config, so anyone can push and pull. Check that the `eve-registry` container's `args` name the file its config volume provides (`/etc/distribution/config.yml` in the base) and that `scripts/validate-template.sh` passes on your overlays.
+- **502 or 503:** the registry pod is not ready, often because the `eve-registry-cert` secret is missing (`kubectl -n eve describe pod -l app.kubernetes.io/name=eve-registry`).
+- **No response or a TLS error:** DNS or the certificate for the registry host is not ready yet (see the next section). Deploy with `--skip-registry-check` until it is, then deploy again without it.
+- **401 without a `Bearer` challenge:** something other than the Eve registry answers on that host. Check the `eve-registry` ingress.
 
 ### TLS Certificate Not Issuing
 

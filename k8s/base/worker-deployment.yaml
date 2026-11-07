@@ -39,8 +39,10 @@ spec:
             # Image used for spawning runner pods in the Kubernetes cluster
             - name: EVE_RUNNER_IMAGE
               value: eve-horizon/worker:local
+            # Runner pods run job code: token-less account, no RBAC
+            # (runner-serviceaccount.yaml). Never point this at eve-worker.
             - name: EVE_RUNNER_SERVICE_ACCOUNT
-              value: eve-worker
+              value: eve-runner
             - name: EVE_API_URL
               value: http://eve-api:4701
             - name: DATABASE_URL
@@ -52,6 +54,15 @@ spec:
           ports:
             - name: http
               containerPort: 4749
+          # Boot can take minutes (harness CLI setup before the server
+          # listens). Liveness and readiness wait until this passes, so a
+          # slow start is not killed; it allows up to 10 minutes.
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            failureThreshold: 120
           readinessProbe:
             httpGet:
               path: /health

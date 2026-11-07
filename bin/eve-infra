@@ -24,6 +24,15 @@ KUBECONFIG_FILE="$REPO_ROOT/config/kubeconfig.yaml"
 NAMESPACE="eve"
 EVE_EFFECTIVE_CONTEXT=""
 
+# psql client for `db status` and `db connect` against a managed database:
+# postgres:17.11-alpine, pinned to its multi-arch index digest.
+PSQL_IMAGE="postgres:17.11-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73"
+
+# How long deploy and restart wait for each rollout. The worker can take
+# minutes to boot, so the default is generous; override with
+# EVE_ROLLOUT_TIMEOUT (a kubectl duration such as 900s or 15m).
+ROLLOUT_TIMEOUT="${EVE_ROLLOUT_TIMEOUT:-600s}"
+
 # ---------------------------------------------------------------------------
 # Colors (disabled when stdout is not a terminal)
 # ---------------------------------------------------------------------------
@@ -472,15 +481,85 @@ cmd_upgrade() {
   echo "    eve-infra deploy"
 }
 
+# Print the public host of the Eve-native registry an overlay renders, or
+# nothing when the overlay has no registry ingress (aws pulls from ECR).
+# Offline: `annotate --local` only parses the rendered manifests.
+registry_ingress_host() {
+  local overlay_dir="$1" rendered
+  if command -v kustomize &>/dev/null; then
+    rendered="$(kustomize build "$overlay_dir")" || return 1
+  else
+    rendered="$(kubectl kustomize "$overlay_dir")" || return 1
+  fi
+  printf '%s\n' "$rendered" \
+    | KUBECONFIG=/dev/null kubectl annotate --local -f - eve-infra/query=registry-host \
+        -o 'go-template={{if and (eq .kind "Ingress") (eq .metadata.name "eve-registry")}}{{range .spec.rules}}{{.host}}{{"\n"}}{{end}}{{end}}' \
+    | sed -n '1p'
+}
+
+# Fail the deploy unless the registry demands a bearer token. A registry that
+# misses its token-auth config starts anyway and lets anyone push and pull.
+verify_registry_auth() {
+  local overlay_dir="$1" host
+  host="$(registry_ingress_host "$overlay_dir")" \
+    || die "Could not read the registry host from $overlay_dir; the registry auth check cannot run."
+  if [[ -z "$host" ]]; then
+    info "Overlay renders no Eve-native registry; skipping the registry auth check."
+    return 0
+  fi
+  command -v curl &>/dev/null || die "curl is required for the registry auth check."
+
+  echo -n "  deployment/eve-registry... "
+  if kube rollout status deployment/eve-registry -n "$NAMESPACE" --timeout="$ROLLOUT_TIMEOUT" 2>/dev/null; then
+    echo -e "${GREEN}ready${RESET}"
+  else
+    echo -e "${RED}not ready after ${ROLLOUT_TIMEOUT}${RESET}"
+  fi
+
+  local url="https://${host}/v2/" attempt response status challenge
+  info "Checking that ${url} demands a bearer token..."
+  for attempt in 1 2 3 4 5 6; do
+    response="$(curl -sS -o /dev/null -D - --max-time 10 "$url" 2>&1 | tr -d '\r' || true)"
+    status="$(printf '%s\n' "$response" | awk '/^HTTP\//{code=$2} END{print code}')"
+    challenge="$(printf '%s\n' "$response" | grep -i '^www-authenticate: *bearer realm=' | sed -n '1p' || true)"
+    if [[ "$status" == "401" && -n "$challenge" ]]; then
+      ok "Registry ${host} requires token auth (${challenge#*: })"
+      return 0
+    fi
+    # Any other answer from the registry itself is definitive; only an
+    # unreachable or not-yet-routed host is worth waiting for.
+    if [[ "$status" == 2* || "$status" == "401" || "$attempt" -eq 6 ]]; then
+      break
+    fi
+    sleep 10
+  done
+
+  local last="${response%%$'\n'*}"
+  die "Registry ${host} did not answer GET /v2/ with 401 and a 'WWW-Authenticate: Bearer realm=' challenge.
+  Last response: ${last:-none}
+  If it answered 200, it is running without its token-auth config and anyone can
+  push and pull. Check the registry args name its mounted config:
+    kubectl -n ${NAMESPACE} get deployment eve-registry -o yaml
+    kubectl -n ${NAMESPACE} logs deployment/eve-registry
+  While DNS or TLS for ${host} is still being set up, re-run with --skip-registry-check."
+}
+
+require_rollout_timeout() {
+  [[ "$ROLLOUT_TIMEOUT" =~ ^[1-9][0-9]*[smh]$ ]] \
+    || die "EVE_ROLLOUT_TIMEOUT must be a duration such as 600s or 15m (got '${ROLLOUT_TIMEOUT}')."
+}
+
 cmd_deploy() {
+  require_rollout_timeout
   require_cluster_access write
 
-  local skip_migrate=false
+  local skip_migrate=false skip_registry_check=false
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --skip-migrate) skip_migrate=true; shift ;;
+      --skip-registry-check) skip_registry_check=true; shift ;;
       *) die "Unknown deploy flag: $1
-  Usage: eve-infra deploy [--skip-migrate]" ;;
+  Usage: eve-infra deploy [--skip-migrate] [--skip-registry-check]" ;;
     esac
   done
 
@@ -490,6 +569,19 @@ cmd_deploy() {
   local overlay_dir="$REPO_ROOT/k8s/overlays/${overlay}"
 
   [[ -d "$overlay_dir" ]] || die "Overlay directory not found: $overlay_dir"
+
+  # Render once, before anything touches the cluster: an overlay that still
+  # carries template placeholders fails here, ahead of migrations, and the
+  # apply below uses exactly the manifests that were checked.
+  info "Building manifests with kustomize (overlay: ${overlay})..."
+  local manifests
+  if command -v kustomize &>/dev/null; then
+    manifests="$(kustomize build "$overlay_dir")"
+  else
+    manifests="$(kubectl kustomize "$overlay_dir")"
+  fi
+  printf '%s\n' "$manifests" | "$REPO_ROOT/scripts/check-placeholders.sh" \
+    || die "Refusing to deploy overlay '${overlay}' while it carries template placeholders."
 
   # Migrations run before rollout so new pods come up against the new schema.
   # Use --skip-migrate only when a migration needs deliberate hand-staging.
@@ -502,16 +594,12 @@ cmd_deploy() {
     echo ""
   fi
 
-  info "Building manifests with kustomize (overlay: ${overlay})..."
-  if command -v kustomize &>/dev/null; then
-    kustomize build "$overlay_dir" | kube apply -f - -n "$NAMESPACE"
-  else
-    kube apply -k "$overlay_dir" -n "$NAMESPACE"
-  fi
+  info "Applying manifests (overlay: ${overlay})..."
+  printf '%s\n' "$manifests" | kube apply -f - -n "$NAMESPACE"
 
   echo ""
-  info "Waiting for rollouts..."
-  local resource
+  info "Waiting for rollouts (up to ${ROLLOUT_TIMEOUT} each)..."
+  local resource failed=()
   for resource in \
     deployment/eve-api \
     deployment/eve-worker \
@@ -520,15 +608,54 @@ cmd_deploy() {
     deployment/eve-dashboard \
     statefulset/eve-agent-runtime; do
     echo -n "  ${resource}... "
-    if kube rollout status "$resource" -n "$NAMESPACE" --timeout=120s 2>/dev/null; then
+    if kube rollout status "$resource" -n "$NAMESPACE" --timeout="$ROLLOUT_TIMEOUT" 2>/dev/null; then
       echo -e "${GREEN}ready${RESET}"
     else
-      echo -e "${RED}timed out${RESET}"
+      echo -e "${RED}not ready after ${ROLLOUT_TIMEOUT}${RESET}"
+      failed+=("$resource")
     fi
   done
 
   echo ""
+  # The registry auth check runs even when a rollout is slow: an open registry
+  # is worth knowing about at once. Unfinished rollouts then fail the deploy.
+  if [[ "$skip_registry_check" == "true" ]]; then
+    warn "Skipping the registry auth check (--skip-registry-check)."
+  else
+    verify_registry_auth "$overlay_dir"
+  fi
+
+  if [[ ${#failed[@]} -gt 0 ]]; then
+    die "Rollout did not finish for: ${failed[*]}
+  Check with: eve-infra status; eve-infra logs <service>
+  A slow first boot may need more time: EVE_ROLLOUT_TIMEOUT=15m eve-infra deploy"
+  fi
+
+  echo ""
   ok "Deploy complete."
+}
+
+# The API reads its signing and encryption keys from eve-api-keys, and GoTrue
+# reads SUPABASE_JWT_SECRET from it. Once secrets sync moves those keys out of
+# eve-app, a Deployment that predates the split would start without them on
+# its next restart, so require the new manifests first. A missing Deployment
+# means first-time setup.
+assert_live_manifests_read_api_keys() {
+  local refs
+  if refs="$(kube get deployment eve-api -n "$NAMESPACE" \
+    -o jsonpath='{.spec.template.spec.containers[*].envFrom[*].secretRef.name}' 2>/dev/null)" \
+    && [[ " $refs " != *" eve-api-keys "* ]]; then
+    die "deployment/eve-api does not load the 'eve-api-keys' secret yet, and this sync moves
+  the API's signing keys out of 'eve-app'. Run 'eve-infra deploy' first (the new
+  reference is optional, so it is safe before the secret exists), then sync again."
+  fi
+  if refs="$(kube get deployment supabase-auth -n "$NAMESPACE" \
+    -o jsonpath='{.spec.template.spec.containers[*].env[?(@.name=="GOTRUE_JWT_SECRET")].valueFrom.secretKeyRef.name}' 2>/dev/null)" \
+    && [[ -n "$refs" && "$refs" != "eve-api-keys" ]]; then
+    die "deployment/supabase-auth still reads GOTRUE_JWT_SECRET from '${refs}', and this sync
+  moves SUPABASE_JWT_SECRET to 'eve-api-keys'. Run 'eve-infra deploy' first, then sync
+  again (GoTrue's new pod waits for the secret; the old pod keeps serving)."
+  fi
 }
 
 cmd_secrets_sync() {
@@ -539,16 +666,20 @@ cmd_secrets_sync() {
   Create it from the example:
     cp config/secrets.env.example config/secrets.env"
   fi
+  command -v python3 &>/dev/null || die "python3 is required to render secrets."
 
-  info "Syncing secrets from config/secrets.env -> k8s secret 'eve-app' in namespace '${NAMESPACE}'..."
+  assert_live_manifests_read_api_keys
 
-  kube create secret generic eve-app \
-    --from-env-file="$SECRETS_FILE" \
-    --namespace="$NAMESPACE" \
-    --dry-run=client -o yaml \
-    | kube apply -f -
+  info "Syncing config/secrets.env -> secrets 'eve-app' and 'eve-api-keys' in namespace '${NAMESPACE}'..."
 
-  ok "Secret 'eve-app' updated."
+  # Render first, so a malformed file never reaches kubectl. The renderer
+  # handles multi-line PEM values, which --from-env-file cannot.
+  local manifest
+  manifest="$(python3 "$REPO_ROOT/scripts/render-k8s-secrets.py" --namespace "$NAMESPACE" "$SECRETS_FILE")" \
+    || die "Could not render ${SECRETS_FILE}; no secret was changed."
+  printf '%s\n' "$manifest" | kube apply -f -
+
+  ok "Secrets 'eve-app' and 'eve-api-keys' updated."
   echo ""
   echo "  Services will pick up new values on next restart:"
   echo "    eve-infra restart api"
@@ -558,12 +689,15 @@ cmd_secrets_sync() {
 cmd_secrets_show() {
   require_cluster_access read
 
-  info "Configured keys in secret 'eve-app':"
-  echo ""
-  kube get secret eve-app -n "$NAMESPACE" -o json 2>/dev/null \
-    | jq -r '.data | keys[]' 2>/dev/null \
-    | sort \
-    || warn "Could not read secret 'eve-app'. It may not exist yet."
+  local name
+  for name in eve-app eve-api-keys; do
+    info "Configured keys in secret '${name}':"
+    kube get secret "$name" -n "$NAMESPACE" -o json 2>/dev/null \
+      | jq -r '.data // {} | keys[]' 2>/dev/null \
+      | sort \
+      || warn "Could not read secret '${name}'. It may not exist yet."
+    echo ""
+  done
 }
 
 cmd_db_migrate() {
@@ -609,6 +743,35 @@ cmd_db_migrate() {
   fi
 }
 
+# Pod overrides for a one-off psql pod against the managed database. The pod
+# gets DATABASE_URL alone from eve-app (not every platform secret), and turns
+# it into libpq environment variables before psql starts, so the URL never
+# appears in a process's arguments. $1 is the psql command line to exec.
+psql_pod_overrides() {
+  local psql_command="$1" tty="${2:-false}"
+  command -v jq &>/dev/null || die "jq is required for database commands."
+  # shellcheck disable=SC2016 # expanded by the pod's shell, not this one
+  local script='exec 2>&1
+set -eu
+: "${DATABASE_URL:?is not set in the eve-app secret}"
+pgenv="$(printf "%s" "$DATABASE_URL" | LC_ALL=C awk "$EVE_PG_ENV_AWK")"
+eval "$pgenv"
+unset DATABASE_URL EVE_PG_ENV_AWK pgenv
+'"exec $psql_command"
+  jq -n \
+    --arg image "$PSQL_IMAGE" \
+    --arg script "$script" \
+    --rawfile awk "$REPO_ROOT/scripts/pg-env-from-url.awk" \
+    --argjson tty "$tty" \
+    '{spec: {containers: [{
+        name: "psql", image: $image, stdin: true, tty: $tty,
+        command: ["sh", "-c", $script],
+        env: [
+          {name: "DATABASE_URL", valueFrom: {secretKeyRef: {name: "eve-app", key: "DATABASE_URL", optional: true}}},
+          {name: "EVE_PG_ENV_AWK", value: $awk}
+        ]}]}}'
+}
+
 cmd_db_status() {
   require_cluster_access read
 
@@ -621,9 +784,9 @@ cmd_db_status() {
   case "$provider" in
     rds|cloud-sql|external)
       local overrides
-      overrides='{"spec":{"containers":[{"name":"psql","image":"postgres:16-alpine","stdin":true,"command":["sh","-c"],"args":["psql \"$DATABASE_URL\" -tA -F\"|\" -c \"SELECT count(*), coalesce(max(name), '"'"'(none)'"'"') FROM _migrations;\" 2>&1 || echo \"ERROR\""],"envFrom":[{"secretRef":{"name":"eve-app"}}]}]}}'
+      overrides="$(psql_pod_overrides "psql -tA -F'|' -c \"SELECT count(*), coalesce(max(name), '(none)') FROM _migrations;\"")"
       local out
-      out="$(kube run eve-db-status --rm -i --image=postgres:16-alpine \
+      out="$(kube run eve-db-status --rm -i --image="$PSQL_IMAGE" \
         --namespace="$NAMESPACE" --restart=Never \
         --overrides="$overrides" 2>/dev/null || true)"
       local row
@@ -710,30 +873,19 @@ cmd_db_connect() {
       ;;
     rds|cloud-sql|external)
       # Port-forward through the API pod (which has DATABASE_URL) as a SOCKS proxy
-      # is complex; instead, run psql in a temporary pod with the same secret.
-      info "Launching psql in a temporary pod (using eve-app secret for DATABASE_URL)..."
+      # is complex; instead, run psql in a temporary pod that reads DATABASE_URL
+      # from the eve-app secret.
+      info "Launching psql in a temporary pod (DATABASE_URL from the eve-app secret)..."
       echo -e "${DIM}Press Ctrl+D or type \\q to exit.${RESET}"
       echo ""
+      local overrides
+      overrides="$(psql_pod_overrides psql true)"
       kube run eve-psql-session \
         --rm -it \
-        --image=postgres:16-alpine \
+        --image="$PSQL_IMAGE" \
         --namespace="$NAMESPACE" \
         --restart=Never \
-        --env="PGDATABASE=$db_name" \
-        --overrides='{
-          "spec": {
-            "containers": [{
-              "name": "psql",
-              "image": "postgres:16-alpine",
-              "stdin": true,
-              "tty": true,
-              "command": ["psql"],
-              "args": ["$(DATABASE_URL)"],
-              "envFrom": [{"secretRef": {"name": "eve-app"}}]
-            }]
-          }
-        }' \
-        -- psql 2>/dev/null \
+        --overrides="$overrides" 2>/dev/null \
         || die "Failed to launch psql session. Ensure the eve-app secret contains DATABASE_URL."
       ;;
     *)
@@ -762,6 +914,7 @@ cmd_restart() {
   [[ -n "$service" ]] || die "Usage: eve-infra restart <service>
   Services: $VALID_SERVICES"
 
+  require_rollout_timeout
   require_cluster_access write
 
   local resource
@@ -771,10 +924,10 @@ cmd_restart() {
   kube rollout restart "$resource" -n "$NAMESPACE"
 
   echo -n "  Waiting for rollout... "
-  if kube rollout status "$resource" -n "$NAMESPACE" --timeout=120s 2>/dev/null; then
+  if kube rollout status "$resource" -n "$NAMESPACE" --timeout="$ROLLOUT_TIMEOUT" 2>/dev/null; then
     echo -e "${GREEN}ready${RESET}"
   else
-    echo -e "${RED}timed out${RESET}"
+    echo -e "${RED}not ready after ${ROLLOUT_TIMEOUT}${RESET}"
     exit 1
   fi
 
@@ -833,11 +986,14 @@ Platform:
   kubeconfig doctor   Validate config/kubeconfig.yaml and cluster connectivity
   kubeconfig refresh  Regenerate config/kubeconfig.yaml (aws/eks)
   upgrade <version>   Update platform.yaml, patch overlays for new version
-  deploy              Run pending migrations + apply current config (use --skip-migrate to deploy without migrating)
+  deploy              Run pending migrations + apply current config (use --skip-migrate to deploy without migrating;
+                      refuses an overlay that still has template placeholders)
+                      Then checks the Eve-native registry demands a bearer token
+                      (--skip-registry-check only while its DNS/TLS is being set up)
   health              Run health check against the API endpoint
 
 Secrets:
-  secrets sync        Push config/secrets.env to k8s eve-app secret
+  secrets sync        Push config/secrets.env to the eve-app and eve-api-keys secrets
   secrets show        List which secret keys are configured
 
 Database:
@@ -858,6 +1014,9 @@ Environment:
   KUBECONFIG          Ignored if set to a different path (safety hardening)
   EVE_KUBE_GUARD_BYPASS=1
                       Emergency override to bypass context safety checks
+  EVE_ALLOW_PLACEHOLDERS=1
+                      Deploy even if the overlay still has template placeholders
+  EVE_ROLLOUT_TIMEOUT How long deploy and restart wait for each rollout (default 600s)
   Config file:        config/platform.yaml (relative to repo root)
   Secrets file:       config/secrets.env (not committed; see secrets.env.example)
 

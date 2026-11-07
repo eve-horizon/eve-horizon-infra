@@ -4,12 +4,15 @@
 data "aws_caller_identity" "current" {}
 
 locals {
-  effective_region               = (var.region != null && trimspace(var.region) != "") ? trimspace(var.region) : var.aws_region
+  # Canonical overrides win when set and not blank. Test for null with a
+  # conditional, never with &&: Terraform 1.10 evaluates both operands of &&,
+  # so a "!= null &&" guard still calls trimspace(null) and fails the plan.
+  effective_region               = var.region == null ? var.aws_region : (trimspace(var.region) != "" ? trimspace(var.region) : var.aws_region)
   effective_compute_model        = trimspace(var.compute_model)
-  effective_instance_type        = (var.compute_type != null && trimspace(var.compute_type) != "") ? trimspace(var.compute_type) : var.instance_type
+  effective_instance_type        = var.compute_type == null ? var.instance_type : (trimspace(var.compute_type) != "" ? trimspace(var.compute_type) : var.instance_type)
   effective_root_volume_size     = var.compute_disk_size_gb != null ? var.compute_disk_size_gb : var.root_volume_size
-  effective_db_instance_class    = (var.database_instance_class != null && trimspace(var.database_instance_class) != "") ? trimspace(var.database_instance_class) : var.db_instance_class
-  effective_ollama_instance_type = (var.ollama_compute_type != null && trimspace(var.ollama_compute_type) != "") ? trimspace(var.ollama_compute_type) : var.ollama_instance_type
+  effective_db_instance_class    = var.database_instance_class == null ? var.db_instance_class : (trimspace(var.database_instance_class) != "" ? trimspace(var.database_instance_class) : var.db_instance_class)
+  effective_ollama_instance_type = var.ollama_compute_type == null ? var.ollama_instance_type : (trimspace(var.ollama_compute_type) != "" ? trimspace(var.ollama_compute_type) : var.ollama_instance_type)
   effective_ollama_volume_size   = var.ollama_disk_size_gb != null ? var.ollama_disk_size_gb : var.ollama_volume_size
   registry_bucket_name           = "${var.name_prefix}-registry-${data.aws_caller_identity.current.account_id}"
   storage_internal_bucket        = "${var.name_prefix}-eve-internal"

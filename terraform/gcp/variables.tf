@@ -83,6 +83,18 @@ variable "allowed_api_cidrs" {
   default     = ["0.0.0.0/0"]
 }
 
+variable "allow_service_external_ips" {
+  description = "Allow Kubernetes Services to set spec.externalIPs (CVE-2020-8554). Leave false unless you rely on it."
+  type        = bool
+  default     = false
+}
+
+variable "enable_dataplane_v2" {
+  description = "Create the GKE cluster with Dataplane V2, which enforces the overlay NetworkPolicies. Creation-time only: an existing cluster is never replaced to change it (check the network_policy_enforced output)."
+  type        = bool
+  default     = true
+}
+
 # -----------------------------------------------------------------------------
 # GKE — Default Pool (core services)
 # -----------------------------------------------------------------------------
@@ -198,6 +210,18 @@ variable "dns_zone_name" {
   type        = string
 }
 
+variable "dns_platform_hosts" {
+  description = "Host labels under the domain that get A records (api.<domain>, ...). Apps use *.apps.<domain>."
+  type        = list(string)
+  default     = ["api", "registry", "auth", "sso", "dashboard", "ingress"]
+}
+
+variable "dns_legacy_wildcard_records" {
+  description = "Keep the old apex and *.<domain> records during migration. Leave false: they let custom domains claim platform hosts."
+  type        = bool
+  default     = false
+}
+
 # -----------------------------------------------------------------------------
 # Database
 # -----------------------------------------------------------------------------
@@ -233,7 +257,7 @@ variable "database_instance_class" {
 }
 
 variable "deletion_protection" {
-  description = "Enable deletion protection on Cloud SQL"
+  description = "Protect Cloud SQL from deletion in Terraform and in Cloud SQL itself (console, gcloud, API)"
   type        = bool
   default     = false
 }

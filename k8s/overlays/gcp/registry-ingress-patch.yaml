@@ -1,0 +1,24 @@
+# Public registry host (registry.<domain>, created by the GCP DNS module).
+# The base supplies the nginx class, the Let's Encrypt issuer and the
+# unlimited request body that image pushes need.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: eve-registry
+  namespace: eve
+spec:
+  tls:
+    - hosts:
+        - registry.eve.example.com
+      secretName: eve-registry-tls
+  rules:
+    - host: registry.eve.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: eve-registry
+                port:
+                  number: 5000

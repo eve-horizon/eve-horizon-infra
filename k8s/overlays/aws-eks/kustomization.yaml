@@ -1,6 +1,7 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
+  - internal-block-ingress.yaml
   - ../../base
 namespace: eve
 patches:
@@ -34,3 +35,4 @@ patches:
   - path: remove-postgres-statefulset.yaml
   - path: remove-postgres-service.yaml
   - path: remove-postgres-secret.yaml
+  - path: remove-app-secret.yaml
