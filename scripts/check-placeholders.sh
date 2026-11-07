@@ -16,7 +16,8 @@
 # =============================================================================
 set -euo pipefail
 
-readonly PLACEHOLDERS='INSTANCE_PREFIX|GCP_PROJECT|YOUR_REGION|REPLACE_[A-Z0-9_]+|[A-Za-z0-9*.-]*example\.(com|net|org)'
+# No backslashes: awk -v processes escapes, and GNU awk turns "\." into ".".
+readonly PLACEHOLDERS='INSTANCE_PREFIX|GCP_PROJECT|YOUR_REGION|REPLACE_[A-Z0-9_]+|[A-Za-z0-9*.-]*example[.](com|net|org)'
 
 # Host-like tokens only: the pattern stops at "@", ":" and "/", so a
 # credential in a URL never reaches the output.

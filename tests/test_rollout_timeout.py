@@ -35,6 +35,10 @@ class RolloutTimeoutTest(unittest.TestCase):
         self.stub.mkdir()
         (self.stub / "kubectl").write_text(STUB_KUBECTL)
         (self.stub / "kubectl").chmod(0o755)
+        # eve-infra prefers a real kustomize binary when one is on PATH (CI
+        # runners have one); stub it too so deploy renders nothing here.
+        (self.stub / "kustomize").write_text("#!/usr/bin/env bash\nexit 0\n")
+        (self.stub / "kustomize").chmod(0o755)
         self.env = {**os.environ, "STUB_DIR": str(self.stub),
                     "PATH": f"{self.stub}{os.pathsep}{os.environ['PATH']}"}
         for name in ("KUBECONFIG", "EVE_ROLLOUT_TIMEOUT", "STUB_FAIL_ROLLOUT"):
