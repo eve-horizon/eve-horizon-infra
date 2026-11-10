@@ -7,6 +7,29 @@ Each entry includes **Sync impact** to guide what downstream agents need to do.
 
 ---
 
+## [2026-11-10]
+
+### fix: confirm new web-login accounts by email and close open signup
+
+- **Scope:** `k8s/base/supabase-auth-deployment.yaml`,
+  `scripts/validate-template.sh`
+- **Why:** GoTrue shipped with auto-confirm on and public signup open, so a
+  new account was confirmed without its owner ever receiving an email. Eve's
+  own account paths (invites, app magic links, domain signup) go through
+  GoTrue's admin API and need neither setting.
+- **Sync impact:**
+  - `k8s/base/supabase-auth-deployment.yaml` — auto-sync safe for instances
+    whose web login is off. **Action required** where web login is live:
+    `GOTRUE_MAILER_AUTOCONFIRM=false` needs working GoTrue SMTP. Existing
+    confirmed accounts are unaffected; a new password signup must click a
+    confirmation email. `GOTRUE_DISABLE_SIGNUP=true` turns off the SSO
+    page's open Sign Up tab and its magic link for an email GoTrue has
+    never seen; invited users and app sign-ins keep working. If your users
+    self-register from the SSO page, set it back to `"false"` in your overlay
+    knowingly.
+  - `scripts/validate-template.sh` — auto-sync safe; fails if an overlay
+    renders other values.
+
 ## [2026-11-05]
 
 ### fix: run the API in production mode

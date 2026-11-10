@@ -48,12 +48,18 @@ spec:
               value: "http://sso.eve.lvh.me"
             - name: GOTRUE_URI_ALLOW_LIST
               value: ""
+            # New accounts come from Eve invites, app magic links and domain
+            # signup, which GoTrue serves through its admin API whatever this
+            # says. Set "false" only if you want anyone to self-register from
+            # the SSO page's Sign Up tab.
             - name: GOTRUE_DISABLE_SIGNUP
-              value: "false"
+              value: "true"
             - name: GOTRUE_EXTERNAL_EMAIL_ENABLED
               value: "true"
+            # Every new account confirms its email address before it can sign
+            # in. Needs GoTrue SMTP; existing confirmed accounts are unaffected.
             - name: GOTRUE_MAILER_AUTOCONFIRM
-              value: "true"
+              value: "false"
             - name: GOTRUE_MAILER_URLPATHS_CONFIRMATION
               value: "/verify"
             - name: GOTRUE_MAILER_URLPATHS_INVITE
