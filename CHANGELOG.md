@@ -9,6 +9,20 @@ Each entry includes **Sync impact** to guide what downstream agents need to do.
 
 ## [2026-11-10]
 
+### docs: Eve 0.1.322 and later need the pinned BuildKit
+
+- **Why:** Eve 0.1.322 stores images under per-project registry paths and
+  gives each build a push credential for its own project only. When a layer
+  was first pushed under an older shared path, BuildKit asks the registry to
+  mount it from there; the registry refuses, and `moby/buildkit:v0.12.5`
+  then fails the push ("insufficient_scope") instead of uploading the layer.
+  The pinned `v0.34.1` (see "run a current BuildKit by digest" below)
+  uploads instead.
+- **Sync impact:** **action required** before upgrading an instance that
+  still runs `v0.12.5`: take the BuildKit change below first (or pin the
+  same digest in your overlay, with GC sized to your cache volume). Running
+  apps are unaffected; only new builds fail without it.
+
 ### fix: confirm new web-login accounts by email and close open signup
 
 - **Scope:** `k8s/base/supabase-auth-deployment.yaml`,
