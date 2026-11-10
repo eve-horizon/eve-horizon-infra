@@ -209,6 +209,16 @@ for overlay in "${OVERLAYS[@]}"; do
     | grep -Eq '^ +value: "?production"?$' \
     || fail "$overlay render does not set NODE_ENV=production on eve-api"
 
+  # Web login: new accounts must confirm their email, and open self-signup
+  # stays off unless an instance turns it on deliberately.
+  for pair in GOTRUE_MAILER_AUTOCONFIRM=false GOTRUE_DISABLE_SIGNUP=true; do
+    name="${pair%%=*}" want="${pair#*=}"
+    rendered_doc Deployment supabase-auth "$rendered" \
+      | grep -A1 -E "^ +- name: ${name}\$" \
+      | grep -Eq "^ +value: \"?${want}\"?\$" \
+      || fail "$overlay render does not set ${name}=${want} on supabase-auth"
+  done
+
   problem="$(registry_config_problem "$rendered")"
   [[ -z "$problem" ]] || fail "$overlay render: $problem"
 
