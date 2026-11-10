@@ -188,6 +188,17 @@ grep -Eq '^[[:space:]]*deletion_protection_enabled[[:space:]]*=[[:space:]]*var\.
   "$REPO_ROOT/terraform/gcp/modules/sql/main.tf" \
   || fail "Cloud SQL settings do not set deletion_protection_enabled from var.deletion_protection"
 
+# Web login: the template's base GoTrue ships with email confirmation on and
+# open self-signup off. Overlays may change either deliberately (see
+# CHANGELOG 2026-11-10), so this checks the base file, not every render.
+gotrue_base="$REPO_ROOT/k8s/base/supabase-auth-deployment.yaml"
+for pair in GOTRUE_MAILER_AUTOCONFIRM=false GOTRUE_DISABLE_SIGNUP=true; do
+  name="${pair%%=*}" want="${pair#*=}"
+  grep -A1 -E "^ +- name: ${name}\$" "$gotrue_base" \
+    | grep -Eq "^ +value: \"?${want}\"?\$" \
+    || fail "k8s/base/supabase-auth-deployment.yaml does not set ${name}=${want}"
+done
+
 for overlay in "${OVERLAYS[@]}"; do
   [[ -f "$REPO_ROOT/k8s/overlays/$overlay/db-migrate-job-patch.yaml" ]] \
     || fail "$overlay is missing its deployment migration job"
@@ -208,16 +219,6 @@ for overlay in "${OVERLAYS[@]}"; do
     | grep -A1 -E '^ +- name: NODE_ENV$' \
     | grep -Eq '^ +value: "?production"?$' \
     || fail "$overlay render does not set NODE_ENV=production on eve-api"
-
-  # Web login: new accounts must confirm their email, and open self-signup
-  # stays off unless an instance turns it on deliberately.
-  for pair in GOTRUE_MAILER_AUTOCONFIRM=false GOTRUE_DISABLE_SIGNUP=true; do
-    name="${pair%%=*}" want="${pair#*=}"
-    rendered_doc Deployment supabase-auth "$rendered" \
-      | grep -A1 -E "^ +- name: ${name}\$" \
-      | grep -Eq "^ +value: \"?${want}\"?\$" \
-      || fail "$overlay render does not set ${name}=${want} on supabase-auth"
-  done
 
   problem="$(registry_config_problem "$rendered")"
   [[ -z "$problem" ]] || fail "$overlay render: $problem"
