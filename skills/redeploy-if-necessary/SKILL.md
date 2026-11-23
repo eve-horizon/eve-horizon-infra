@@ -45,7 +45,7 @@ If health fails, do not proceed. Debug with `./bin/eve-infra status` and `./bin/
 ./bin/eve-infra version
 ```
 
-This queries the configured public ECR registry for published semver tags and compares them against the version pinned in `config/platform.yaml`.
+This queries the configured registry (GHCR by default) for published semver tags and compares them against the version pinned in `config/platform.yaml`.
 
 Three outcomes:
 - **"You are on the latest version"** — stop here, nothing to do

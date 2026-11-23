@@ -263,6 +263,20 @@ cmd_version() {
   tags=""
 
   case "$registry_host" in
+    ghcr.io)
+      if ! command -v curl &>/dev/null || ! command -v jq &>/dev/null; then
+        warn "curl + jq are required to query GHCR tags."
+        return
+      fi
+      local repository token tags_json
+      repository="${registry_path}/api"
+      token="$(curl -sfL "https://ghcr.io/token?service=ghcr.io&scope=repository:${repository}:pull" \
+        | jq -r '.token // empty' 2>/dev/null || true)"
+      [[ -n "$token" ]] || return
+      tags_json="$(curl -sfL -H "Authorization: Bearer ${token}" \
+        "https://ghcr.io/v2/${repository}/tags/list?n=1000" 2>/dev/null || true)"
+      tags="$(echo "$tags_json" | jq -r '.tags[]? // empty' 2>/dev/null || true)"
+      ;;
     public.ecr.aws)
       if ! command -v curl &>/dev/null || ! command -v jq &>/dev/null; then
         warn "curl + jq are required to query public ECR tags."

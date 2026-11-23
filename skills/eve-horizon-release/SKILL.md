@@ -91,8 +91,9 @@ Tell the user:
 
 ```
 release-v0.1.147 pushed to eve-horizon
-  -> publish-images.yml runs (builds 7 service images)
-  -> pushes images to public.ecr.aws/w7c4v0w3/eve-horizon/*:0.1.147
+  -> publish-images.yml runs (builds the 7 service images and migrate)
+  -> after approval in the release environment, pushes signed images to
+     ghcr.io/eve-horizon/eve-horizon/*:0.1.147
   -> stops; a deployment instance owner chooses when to roll out
 ```
 

@@ -19,11 +19,11 @@
 platform:
   # Pinned Eve platform version. All service images are pulled at this tag.
   # Bump this to upgrade the entire platform in lockstep.
-  version: "0.1.28"
+  version: "0.1.332"
 
   # Container image registry. All Eve images live under this namespace.
-  # Default points to the public ECR mirror for anonymous pulls.
-  registry: "public.ecr.aws/w7c4v0w3/eve-horizon"      # [OPTIONAL] Override for GHCR/private mirrors
+  # Default: GHCR, where Eve releases are published, signed (anonymous pulls).
+  registry: "ghcr.io/eve-horizon/eve-horizon"      # [OPTIONAL] Override for a private mirror
 
 # -----------------------------------------------------------------------------
 # Environment

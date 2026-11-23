@@ -8,5 +8,5 @@ spec:
     spec:
       containers:
         - name: sso
-          image: public.ecr.aws/w7c4v0w3/eve-horizon/sso:latest
+          image: ghcr.io/eve-horizon/eve-horizon/sso:0.1.332
           imagePullPolicy: IfNotPresent

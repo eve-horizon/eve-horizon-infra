@@ -8,7 +8,7 @@ spec:
     spec:
       containers:
         - name: orchestrator
-          image: public.ecr.aws/w7c4v0w3/eve-horizon/orchestrator:staging
+          image: ghcr.io/eve-horizon/eve-horizon/orchestrator:0.1.332
           env:
             - $patch: replace
             - name: DATABASE_URL

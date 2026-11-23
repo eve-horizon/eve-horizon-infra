@@ -424,7 +424,7 @@ If `observability.otel_enabled` is set to `true` in `platform.yaml`, all Eve ser
 
 ### Pods stuck in ImagePullBackOff
 
-The cluster cannot pull images from `public.ecr.aws`.
+The cluster cannot pull the platform images (GHCR by default).
 
 ```bash
 # Check pod events for the exact error
@@ -433,7 +433,7 @@ kubectl describe pod <pod-name> -n eve | grep -A5 "Events"
 
 Common causes:
 - Image tag doesn't exist (check `config/platform.yaml` version matches a published release)
-- Network issue reaching ECR public registry
+- Network issue reaching `ghcr.io`
 - If using a private registry, check the `eve-registry` pull secret exists
 
 ### Pods stuck in CrashLoopBackOff

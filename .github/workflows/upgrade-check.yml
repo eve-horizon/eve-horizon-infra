@@ -88,6 +88,22 @@ jobs:
               | tr ' ' '\n' \
               | sed '/^None$/d' \
               || echo "")
+          elif [[ "$REGISTRY_HOST" == "ghcr.io" ]]; then
+            # GHCR path format: ghcr.io/<owner>/<repository>; public packages
+            # take an anonymous token.
+            API_REPOSITORY="${REGISTRY_PATH}/api"
+            TOKEN=$(curl -sL \
+              "https://ghcr.io/token?service=ghcr.io&scope=repository:${API_REPOSITORY}:pull" 2>/dev/null \
+              | jq -r '.token // empty' 2>/dev/null || echo "")
+            if [[ -z "$TOKEN" ]]; then
+              echo "Could not retrieve anonymous token for GHCR"
+              echo "available=false" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+            TAGS=$(curl -sL \
+              -H "Authorization: Bearer ${TOKEN}" \
+              "https://ghcr.io/v2/${API_REPOSITORY}/tags/list?n=1000" 2>/dev/null \
+              | jq -r '.tags[]? // empty' 2>/dev/null || echo "")
           elif [[ "$REGISTRY_HOST" == "public.ecr.aws" ]]; then
             # ECR Public path format: public.ecr.aws/<alias>/<namespace>
             REGISTRY_ALIAS="${REGISTRY_PATH%%/*}"
