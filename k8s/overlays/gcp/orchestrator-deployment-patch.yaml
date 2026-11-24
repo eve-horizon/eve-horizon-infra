@@ -15,7 +15,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
         - name: orchestrator
-          image: public.ecr.aws/w7c4v0w3/eve-horizon/orchestrator:latest
+          image: ghcr.io/eve-horizon/eve-horizon/orchestrator:0.1.332
           imagePullPolicy: IfNotPresent
           lifecycle:
             preStop:

@@ -7,6 +7,24 @@ Each entry includes **Sync impact** to guide what downstream agents need to do.
 
 ---
 
+## [2026-11-23]
+
+### chore: pull platform images from GHCR, pinned
+
+- **Scope:** `config/platform.yaml`, `k8s/overlays/{aws,aws-eks,gcp}/*`,
+  `bin/eve-infra`, `.github/workflows/upgrade-check.yml`,
+  `scripts/validate-template.sh`, `scripts/validate-template.d/ghcr-registry.sh`,
+  docs and skills
+- **Why:** Eve releases publish only to `ghcr.io/eve-horizon/eve-horizon`,
+  signed and versioned; the old ECR namespace gets no new releases. The
+  template defaulted to that namespace and to floating `latest`/`staging`
+  tags, and `eve-infra version` and the upgrade check could not list GHCR's
+  tags. The default registry is now GHCR, overlays pin `0.1.332` (toolchains
+  `0.1.0`), and both tag lookups understand GHCR.
+- **Sync impact:** **review**. An instance that set `platform.registry`
+  keeps its value. One still on the ECR default should move to GHCR (and
+  pin digests) at its next upgrade; versions from 0.1.320 on are there.
+
 ## [2026-11-10]
 
 ### docs: Eve 0.1.322 and later need the pinned BuildKit

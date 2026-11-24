@@ -5,7 +5,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-readonly REGISTRY="public.ecr.aws/w7c4v0w3/eve-horizon"
+readonly REGISTRY="ghcr.io/eve-horizon/eve-horizon"
 readonly SENTINEL_VERSION="9.9.999-template-ci"
 readonly OVERLAYS=(aws aws-eks gcp)
 readonly SERVICES=(api sso gateway agent-runtime orchestrator worker dashboard)

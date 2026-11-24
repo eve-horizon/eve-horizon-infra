@@ -270,10 +270,10 @@ ok "ClusterIssuers created."
 # -------------------------------------------------------------------------
 # 4. Container registry (no pull secret needed)
 # -------------------------------------------------------------------------
-# Platform images use public ECR (anonymous pulls).
+# Platform images come from GHCR (anonymous pulls).
 # App builds use the Eve-native in-cluster registry (auth via EVE_INTERNAL_API_KEY).
 # No docker-registry pull secret is required.
-ok "Registry: public ECR (platform) + Eve-native (app builds). No pull secret needed."
+ok "Registry: GHCR (platform) + Eve-native (app builds). No pull secret needed."
 
 # -------------------------------------------------------------------------
 # 5. Sync application secrets

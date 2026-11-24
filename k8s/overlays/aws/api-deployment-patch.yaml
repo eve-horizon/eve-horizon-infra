@@ -8,7 +8,7 @@ spec:
     spec:
       containers:
         - name: api
-          image: public.ecr.aws/w7c4v0w3/eve-horizon/api:0.1.132
+          image: ghcr.io/eve-horizon/eve-horizon/api:0.1.332
           env:
             - $patch: replace
             - name: NODE_ENV

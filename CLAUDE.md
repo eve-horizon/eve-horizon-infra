@@ -54,7 +54,7 @@ git add -A && git commit -m "chore: upgrade eve platform to <version>"
 ./bin/eve-infra health              # Verify
 ```
 
-Images are pulled from `public.ecr.aws/w7c4v0w3/eve-horizon/<service>:<version>`.
+Images are pulled from `ghcr.io/eve-horizon/eve-horizon/<service>:<version>` (signed; pin digests in production).
 
 ## Upstream Platform Fixes
 

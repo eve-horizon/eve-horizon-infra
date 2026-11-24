@@ -10,13 +10,13 @@ spec:
         - name: eve-registry
       containers:
         - name: worker
-          image: public.ecr.aws/w7c4v0w3/eve-horizon/worker:latest
+          image: ghcr.io/eve-horizon/eve-horizon/worker:0.1.332
           imagePullPolicy: IfNotPresent
           env:
             - name: DATABASE_URL
               value: postgres://eve:REPLACE_ME@db.example.com:5432/eve
             - name: EVE_RUNNER_IMAGE
-              value: public.ecr.aws/w7c4v0w3/eve-horizon/worker:latest
+              value: ghcr.io/eve-horizon/eve-horizon/worker:0.1.332
             - name: EVE_DEFAULT_DOMAIN
               value: apps.example.com
             - name: EVE_COMPUTE_MODEL

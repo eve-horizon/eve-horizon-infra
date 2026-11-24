@@ -13,7 +13,7 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: migrate
-          image: public.ecr.aws/w7c4v0w3/eve-horizon/api:staging
+          image: ghcr.io/eve-horizon/eve-horizon/api:0.1.332
           imagePullPolicy: Always
           env:
             - name: DATABASE_URL
